@@ -31,7 +31,8 @@ type AuthnSessionManager interface {
 // It can be interacted with so to implement more sophisticated user
 // authentication flows.
 type AuthnSession struct {
-	ID string `json:"id"`
+	ID     string `json:"id"`
+	Status Status `json:"status"`
 	// Subject is the user identifier.
 	//
 	// This value must be informed during the authentication flow.
@@ -59,8 +60,8 @@ type AuthnSession struct {
 	GrantedScopes string `json:"granted_scopes,omitempty"`
 	// GrantedAuthDetails is the authorization details the client will be granted
 	// access once the access token is generated.
-	GrantedAuthDetails []AuthorizationDetail `json:"granted_authorization_details,omitempty"`
-	GrantedResources   Resources             `json:"granted_resources,omitempty"`
+	GrantedAuthDetails []AuthDetail `json:"granted_authorization_details,omitempty"`
+	GrantedResources   Resources    `json:"granted_resources,omitempty"`
 
 	JWKThumbprint string `json:"jwk_thumbprint,omitempty"`
 	// ClientCertThumbprint contains the thumbprint of the certificate used by
@@ -99,7 +100,7 @@ func (s *AuthnSession) GrantScopes(scopes string) {
 // GrantAuthorizationDetails sets the authorization details the client will have
 // permissions to use.
 // This will only have effect if support for authorization details is enabled.
-func (s *AuthnSession) GrantAuthorizationDetails(authDetails []AuthorizationDetail) {
+func (s *AuthnSession) GrantAuthorizationDetails(authDetails []AuthDetail) {
 	s.GrantedAuthDetails = authDetails
 }
 

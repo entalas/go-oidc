@@ -1,6 +1,8 @@
 package oidc
 
 import (
+	"context"
+
 	"github.com/luikyv/go-oidc/pkg/goidc"
 )
 
@@ -40,12 +42,12 @@ type Configuration struct {
 	DisplayValues              []goidc.DisplayValue
 	// Claims defines the user claims that can be returned in the userinfo endpoint or in ID tokens.
 	// This will be published in the /.well-known/openid-configuration endpoint.
-	Claims                    []string
-	ClaimTypes                []goidc.ClaimType
-	DefaultSubIdentifierType  goidc.SubIdentifierType
-	SubIdentifierTypes        []goidc.SubIdentifierType
-	GeneratePairwiseSubIDFunc goidc.GeneratePairwiseSubIDFunc
-	StaticClients             []*goidc.Client
+	Claims                   []string
+	ClaimTypes               []goidc.ClaimType
+	DefaultSubIdentifierType goidc.SubIdentifierType
+	SubIdentifierTypes       []goidc.SubIdentifierType
+	PairwiseSubjectFunc      goidc.PairwiseSubjectFunc
+	StaticClients            []*goidc.Client
 	// IssuerRespParamIsEnabled indicates if the "iss" parameter will be
 	// returned when redirecting the user back to the client application.
 	IssuerRespParamIsEnabled bool
@@ -150,15 +152,15 @@ type Configuration struct {
 	PAREndpoint          string
 	PARHandleSessionFunc goidc.HandleSessionFunc
 	PARLifetimeSecs      int
-	// PARAllowUnregisteredRedirectURI indicates whether the redirect URIs
+	// PARUnregisteredRedirectURIIsEnabled indicates whether the redirect URIs
 	// informed during PAR must be previously registered or not.
-	PARAllowUnregisteredRedirectURI bool
-	PARIDFunc                       goidc.RandomStringFunc
+	PARUnregisteredRedirectURIIsEnabled bool
+	PARIDFunc                           goidc.RandomStringFunc
 
 	CIBAEndpoint                   string
+	CIBAProfile                    goidc.CIBAProfile // TODO: Use this.
 	CIBATokenDeliveryModels        []goidc.CIBATokenDeliveryMode
-	InitBackAuthFunc               goidc.InitBackAuthFunc
-	ValidateBackAuthFunc           goidc.ValidateBackAuthFunc
+	CIBAHandleSessionFunc          goidc.HandleSessionFunc
 	CIBAUserCodeIsEnabled          bool
 	CIBADefaultSessionLifetimeSecs int
 	CIBAPollingIntervalSecs        int
@@ -183,9 +185,10 @@ type Configuration struct {
 	PKCEDefaultChallengeMethod goidc.CodeChallengeMethod
 	PKCEChallengeMethods       []goidc.CodeChallengeMethod
 
-	RichAuthorizationIsEnabled bool
-	AuthDetailTypes            []goidc.AuthDetailType
-	CompareAuthDetailsFunc     goidc.CompareAuthDetailsFunc
+	RARIsEnabled          bool
+	RARDetailTypes        []goidc.AuthDetailType
+	RARValidateDetailFunc func(context.Context, goidc.AuthDetail) error
+	RARCompareDetailsFunc goidc.RARCompareDetailsFunc
 
 	ResourceIndicatorsIsEnabled bool
 	// ResourceIndicatorsIsRequired indicates that the resource parameter is
@@ -196,8 +199,8 @@ type Configuration struct {
 	HTTPClientFunc goidc.HTTPClientFunc
 	CheckJTIFunc   goidc.CheckJTIFunc
 
-	JWTBearerGrantClientAuthnIsRequired bool
-	HandleJWTBearerGrantAssertionFunc   goidc.HandleJWTBearerGrantAssertionFunc
+	JWTBearerClientAuthnIsRequired bool
+	JWTBearerHandleAssertionFunc   goidc.JWTBearerHandleAssertionFunc
 
 	ErrorURI string
 

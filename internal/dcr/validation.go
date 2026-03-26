@@ -263,7 +263,7 @@ func validateSubIdentifierPairwise(ctx oidc.Context, meta *goidc.ClientMeta) err
 	//    - 'private_key_jwt' for token authentication.
 	//    - 'self_signed_tls_client_auth' for token authentication.
 	//    - Usage of signed request objects.
-	if slices.Contains(meta.GrantTypes, goidc.GrantCIBA) && meta.CIBATokenDeliveryMode != goidc.CIBATokenDeliveryModePush {
+	if slices.Contains(meta.GrantTypes, goidc.GrantCIBA) && meta.CIBATokenDeliveryMode != goidc.CIBADeliveryModePush {
 		if meta.JWKSURI == "" {
 			return goidc.NewError(goidc.ErrorCodeInvalidClientMetadata,
 				"the 'jwks_uri' is required for CIBA with non-push delivery modes when using pairwise sub type")
@@ -312,7 +312,7 @@ func validateSectorIdentifierURI(ctx oidc.Context, meta *goidc.ClientMeta) error
 	}
 
 	if slices.Contains(meta.GrantTypes, goidc.GrantCIBA) {
-		if meta.CIBATokenDeliveryMode == goidc.CIBATokenDeliveryModePush {
+		if meta.CIBATokenDeliveryMode == goidc.CIBADeliveryModePush {
 			wantedURIs = append(wantedURIs, meta.CIBANotificationEndpoint)
 		} else if meta.JWKSURI != "" {
 			wantedURIs = append(wantedURIs, meta.JWKSURI)
@@ -580,12 +580,12 @@ func validateSignedJWKSURI(ctx oidc.Context, meta *goidc.ClientMeta) error {
 }
 
 func validateAuthorizationDetailTypes(ctx oidc.Context, meta *goidc.ClientMeta) error {
-	if !ctx.RichAuthorizationIsEnabled || meta.AuthDetailTypes == nil {
+	if !ctx.RARIsEnabled || meta.AuthDetailTypes == nil {
 		return nil
 	}
 
 	for _, dt := range meta.AuthDetailTypes {
-		if !slices.Contains(ctx.AuthDetailTypes, dt) {
+		if !slices.Contains(ctx.RARDetailTypes, dt) {
 			return goidc.NewError(goidc.ErrorCodeInvalidClientMetadata, "authorization detail type not supported")
 		}
 	}

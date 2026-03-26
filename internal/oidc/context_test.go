@@ -556,11 +556,11 @@ func TestPrivateKey_KeyDoesntExist(t *testing.T) {
 	}
 }
 
-func TestExportableSubject(t *testing.T) {
+func TestPairwiseSubject(t *testing.T) {
 	// Given.
 	ctx := oidc.Context{
 		Configuration: &oidc.Configuration{
-			GeneratePairwiseSubIDFunc: func(ctx context.Context, sub string, client *goidc.Client) string {
+			PairwiseSubjectFunc: func(ctx context.Context, sub string, client *goidc.Client) string {
 				parseURL, _ := url.Parse(client.SectorIdentifierURI)
 				return parseURL.Hostname() + "_" + sub
 			},
@@ -574,33 +574,7 @@ func TestExportableSubject(t *testing.T) {
 	}
 
 	// When.
-	sub := ctx.ExportableSubject("random_sub", client)
-
-	// Then.
-	if sub != "example.com_random_sub" {
-		t.Errorf("got %s, want = %s", sub, "example.com_random_sub")
-	}
-}
-
-func TestExportableSubject_PairwiseAsDefault(t *testing.T) {
-	// Given.
-	ctx := oidc.Context{
-		Configuration: &oidc.Configuration{
-			DefaultSubIdentifierType: goidc.SubIdentifierPairwise,
-			GeneratePairwiseSubIDFunc: func(ctx context.Context, sub string, client *goidc.Client) string {
-				parseURL, _ := url.Parse(client.SectorIdentifierURI)
-				return parseURL.Hostname() + "_" + sub
-			},
-		},
-	}
-	client := &goidc.Client{
-		ClientMeta: goidc.ClientMeta{
-			SectorIdentifierURI: "https://example.com",
-		},
-	}
-
-	// When.
-	sub := ctx.ExportableSubject("random_sub", client)
+	sub := ctx.PairwiseSubject("random_sub", client)
 
 	// Then.
 	if sub != "example.com_random_sub" {
@@ -623,7 +597,7 @@ func TestIsClientAllowedTokenIntrospection(t *testing.T) {
 	}
 
 	// Given.
-	ctx.IsClientAllowedTokenIntrospectionFunc = func(c *goidc.Client, _ goidc.TokenInfo) bool {
+	ctx.IsClientAllowedTokenIntrospectionFunc = func(_ context.Context, c *goidc.Client, _ goidc.TokenInfo) bool {
 		return true
 	}
 	// When.
@@ -648,7 +622,7 @@ func TestIsClientAllowedTokenRevocationFunc(t *testing.T) {
 	}
 
 	// Given.
-	ctx.IsClientAllowedTokenRevocationFunc = func(c *goidc.Client) bool {
+	ctx.IsClientAllowedTokenRevocationFunc = func(_ context.Context, c *goidc.Client) bool {
 		return true
 	}
 	// When.
@@ -764,18 +738,18 @@ func TestCompareAuthDetails(t *testing.T) {
 		Configuration: &oidc.Configuration{},
 	}
 	// When.
-	err := ctx.CompareAuthDetails(nil, nil)
+	err := ctx.RARCompareAuthDetails(nil, nil)
 	// Then.
 	if err == nil {
 		t.Error("the default behavior is to return an error")
 	}
 
 	// Given.
-	ctx.CompareAuthDetailsFunc = func(granted, requested []goidc.AuthorizationDetail) error {
+	ctx.RARCompareDetailsFunc = func(_ context.Context, granted, requested []goidc.AuthDetail) error {
 		return nil
 	}
 	// When.
-	err = ctx.CompareAuthDetails(nil, nil)
+	err = ctx.RARCompareAuthDetails(nil, nil)
 	// Then.
 	if err != nil {
 		t.Fatal("no error should be returned")
@@ -788,42 +762,18 @@ func TestInitBackAuth(t *testing.T) {
 		Configuration: &oidc.Configuration{},
 	}
 	// When.
-	err := ctx.InitBackAuth(nil)
+	err := ctx.CIBAHandleSession(nil, nil)
 	// Then.
 	if err == nil {
 		t.Error("the default behavior is to return an error")
 	}
 
 	// Given.
-	ctx.InitBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
+	ctx.CIBAHandleSessionFunc = func(ctx context.Context, as *goidc.AuthnSession, c *goidc.Client) error {
 		return nil
 	}
 	// When.
-	err = ctx.InitBackAuth(nil)
-	// Then.
-	if err != nil {
-		t.Fatal("no error should be returned")
-	}
-}
-
-func TestValidateBackAuth(t *testing.T) {
-	// Given.
-	ctx := oidc.Context{
-		Configuration: &oidc.Configuration{},
-	}
-	// When.
-	err := ctx.ValidateBackAuth(nil)
-	// Then.
-	if err == nil {
-		t.Error("the default behavior is to return an error")
-	}
-
-	// Given.
-	ctx.ValidateBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
-		return nil
-	}
-	// When.
-	err = ctx.ValidateBackAuth(nil)
+	err = ctx.CIBAHandleSession(nil, nil)
 	// Then.
 	if err != nil {
 		t.Fatal("no error should be returned")
@@ -857,88 +807,6 @@ func TestShouldIssueRefreshToken(t *testing.T) {
 		t.Error("the refresh token should be not allowed")
 	}
 
-}
-
-func TestTokenOptions_JWT(t *testing.T) {
-	// Given.
-	ctx := oidctest.NewContext(t)
-	ctx.TokenOptionsFunc = func(_ context.Context, _ *goidc.Grant, _ *goidc.Client) goidc.TokenOptions {
-		return goidc.NewJWTTokenOptions("random_key_id", 600)
-	}
-	client := &goidc.Client{}
-	grant := &goidc.Grant{}
-
-	// When.
-	opts := ctx.TokenOptions(grant, client)
-
-	// Then.
-	if opts.Format != goidc.TokenFormatJWT {
-		t.Errorf("got %s, want %s", opts.Format, goidc.TokenFormatJWT)
-	}
-}
-
-func TestTokenOptions_Opaque(t *testing.T) {
-	// Given.
-	ctx := oidctest.NewContext(t)
-	ctx.TokenOptionsFunc = func(_ context.Context, _ *goidc.Grant, _ *goidc.Client) goidc.TokenOptions {
-		return goidc.NewOpaqueTokenOptions(600)
-	}
-	client := &goidc.Client{}
-	grant := &goidc.Grant{}
-
-	// When.
-	opts := ctx.TokenOptions(grant, client)
-
-	// Then.
-	if opts.Format != goidc.TokenFormatOpaque {
-		t.Errorf("got %s, want %s", opts.Format, goidc.TokenFormatOpaque)
-	}
-}
-
-func TestTokenOptions_JWTNotAllowedWhenPairwiseSubject(t *testing.T) {
-	// Given.
-	ctx := oidctest.NewContext(t)
-	ctx.TokenOptionsFunc = func(_ context.Context, _ *goidc.Grant, _ *goidc.Client) goidc.TokenOptions {
-		return goidc.NewJWTTokenOptions("random_key_id", 600)
-	}
-	client := &goidc.Client{
-		ClientMeta: goidc.ClientMeta{
-			SubIdentifierType: goidc.SubIdentifierPairwise,
-		},
-	}
-	grant := &goidc.Grant{}
-
-	// When.
-	opts := ctx.TokenOptions(grant, client)
-
-	// Then.
-	if opts.Format != goidc.TokenFormatOpaque {
-		t.Errorf("got %s, want %s", opts.Format, goidc.TokenFormatOpaque)
-	}
-}
-
-func TestTokenOptions_JWTIsAllowedForPairwiseSubjectWhenClientCredentials(t *testing.T) {
-	// Given.
-	ctx := oidctest.NewContext(t)
-	ctx.TokenOptionsFunc = func(_ context.Context, _ *goidc.Grant, _ *goidc.Client) goidc.TokenOptions {
-		return goidc.NewJWTTokenOptions("random_key_id", 600)
-	}
-	client := &goidc.Client{
-		ClientMeta: goidc.ClientMeta{
-			SubIdentifierType: goidc.SubIdentifierPairwise,
-		},
-	}
-	grant := &goidc.Grant{
-		Type: goidc.GrantClientCredentials,
-	}
-
-	// When.
-	opts := ctx.TokenOptions(grant, client)
-
-	// Then.
-	if opts.Format != goidc.TokenFormatJWT {
-		t.Errorf("got %s, want %s", opts.Format, goidc.TokenFormatJWT)
-	}
 }
 
 func TestHandleGrant(t *testing.T) {

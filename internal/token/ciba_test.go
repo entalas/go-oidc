@@ -101,8 +101,9 @@ func TestGenerateGrant_CIBAGrant_AuthPending(t *testing.T) {
 
 	// Given.
 	ctx, _, session := setUpCIBAGrant(t)
-	ctx.ValidateBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
-		return goidc.NewError(goidc.ErrorCodeAuthPending, "auth pending")
+	session.Status = goidc.StatusInProgress
+	if err := ctx.SaveAuthnSession(session); err != nil {
+		t.Fatal(err)
 	}
 
 	req := request{
@@ -141,8 +142,9 @@ func TestGenerateGrant_CIBAGrant_InvalidAuthSession(t *testing.T) {
 
 	// Given.
 	ctx, _, session := setUpCIBAGrant(t)
-	ctx.ValidateBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
-		return goidc.NewError(goidc.ErrorCodeAccessDenied, "access denied")
+	session.Status = goidc.StatusFailure
+	if err := ctx.SaveAuthnSession(session); err != nil {
+		t.Fatal(err)
 	}
 
 	req := request{
@@ -264,13 +266,10 @@ func setUpCIBAGrant(t testing.TB) (
 	ctx = oidctest.NewContext(t)
 	ctx.GrantTypes = append(ctx.GrantTypes, goidc.GrantCIBA)
 	ctx.CIBATokenDeliveryModels = []goidc.CIBATokenDeliveryMode{
-		goidc.CIBATokenDeliveryModePoll, goidc.CIBATokenDeliveryModePing,
-		goidc.CIBATokenDeliveryModePush,
+		goidc.CIBADeliveryModePoll, goidc.CIBADeliveryModePing,
+		goidc.CIBADeliveryModePush,
 	}
-	ctx.InitBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
-		return nil
-	}
-	ctx.ValidateBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
+	ctx.CIBAHandleSessionFunc = func(ctx context.Context, as *goidc.AuthnSession, c *goidc.Client) error {
 		return nil
 	}
 	ctx.CIBAUserCodeIsEnabled = true
@@ -279,7 +278,7 @@ func setUpCIBAGrant(t testing.TB) (
 
 	client, secret := oidctest.NewClient(t)
 	client.GrantTypes = append(client.GrantTypes, goidc.GrantCIBA)
-	client.CIBATokenDeliveryMode = goidc.CIBATokenDeliveryModePing
+	client.CIBATokenDeliveryMode = goidc.CIBADeliveryModePing
 	client.CIBANotificationEndpoint = "https://example.client.com/ciba"
 	if err := ctx.SaveClient(client); err != nil {
 		t.Errorf("error while creating the client: %v", err)
@@ -293,6 +292,7 @@ func setUpCIBAGrant(t testing.TB) (
 	authReqID := "random_auth_req_id"
 	session = &goidc.AuthnSession{
 		ClientID:      client.ID,
+		Status:        goidc.StatusSuccess,
 		GrantedScopes: goidc.ScopeOpenID.ID,
 		AuthorizationParameters: goidc.AuthorizationParameters{
 			Scopes: goidc.ScopeOpenID.ID,

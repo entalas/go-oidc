@@ -2,9 +2,13 @@ package provider
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
+	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/luikyv/go-oidc/internal/authorize"
@@ -403,7 +407,8 @@ func (op *Provider) setDefaults() error {
 	}
 
 	if slices.Contains(op.config.GrantTypes, goidc.GrantCIBA) {
-		op.config.CIBATokenDeliveryModels = nonZeroOrDefault(op.config.CIBATokenDeliveryModels, []goidc.CIBATokenDeliveryMode{goidc.CIBATokenDeliveryModePoll})
+		op.config.CIBAProfile = nonZeroOrDefault(op.config.CIBAProfile, goidc.CIBAProfileOpenID)
+		op.config.CIBATokenDeliveryModels = nonZeroOrDefault(op.config.CIBATokenDeliveryModels, []goidc.CIBATokenDeliveryMode{goidc.CIBADeliveryModePoll})
 		op.config.CIBAEndpoint = nonZeroOrDefault(op.config.CIBAEndpoint, defaultEndpointCIBA)
 		op.config.CIBADefaultSessionLifetimeSecs = nonZeroOrDefault(op.config.CIBADefaultSessionLifetimeSecs, defaultCIBADefaultSessionLifetimeSecs)
 		op.config.CIBAPollingIntervalSecs = nonZeroOrDefault(op.config.CIBAPollingIntervalSecs, defaultCIBAPollingIntervalSecs)
@@ -457,11 +462,90 @@ func (op *Provider) setDefaults() error {
 		}
 	}
 
+	if op.config.RARIsEnabled {
+		op.config.RARCompareDetailsFunc = nonZeroOrDefault(op.config.RARCompareDetailsFunc, defaultCompareAuthDetailsFunc)
+	}
+
 	return nil
 }
 
 func (op *Provider) validate() error {
-	return runValidations(op.config, validateTokenBinding)
+	if slices.Contains(op.config.SubIdentifierTypes, goidc.SubIdentifierPairwise) && op.config.PairwiseSubjectFunc == nil {
+		return fmt.Errorf("pairwise subject identifier type is enabled but the pairwise func is not set, see %s", funcName(WithPairwiseSubjectFunc))
+	}
+
+	if slices.Contains(op.config.GrantTypes, goidc.GrantJWTBearer) && op.config.JWTBearerHandleAssertionFunc == nil {
+		return fmt.Errorf("jwt bearer grant type is enabled but the assertion handler is not set, see %s", funcName(WithJWTBearerHandleAssertionFunc))
+	}
+
+	if op.config.TokenBindingIsRequired && !op.config.DPoPIsEnabled && !op.config.MTLSTokenBindingIsEnabled {
+		return errors.New("either dpop or tls binding must be enabled if sender constraining tokens is required")
+	}
+
+	if op.config.Profile == goidc.ProfileFAPI1 {
+		for _, method := range op.config.TokenAuthnMethods {
+			if !slices.Contains([]goidc.AuthnMethod{
+				goidc.AuthnMethodPrivateKeyJWT,
+				goidc.AuthnMethodSecretJWT,
+				goidc.AuthnMethodTLS,
+				goidc.AuthnMethodNone,
+			}, method) {
+				return fmt.Errorf("[FAPI 1.0 5.2.2] %s is not a valid authentication method", method)
+			}
+		}
+	}
+
+	if op.config.Profile == goidc.ProfileFAPI2 {
+		if slices.Contains(op.config.GrantTypes, goidc.GrantImplicit) {
+			return errors.New("[FAPI 2.0 5.3.1] implicit grant is not allowed")
+		}
+
+		if !op.config.TokenBindingIsRequired && !op.config.DPoPIsRequired && !op.config.MTLSTokenBindingIsRequired {
+			return errors.New("[FAPI 2.0 5.3.1] sender-constrained access tokens must be required")
+		}
+
+		if !slices.Contains(op.config.TokenAuthnMethods, goidc.AuthnMethodPrivateKeyJWT) && !slices.Contains(op.config.TokenAuthnMethods, goidc.AuthnMethodTLS) {
+			return errors.New("[FAPI 2.0 5.3.1] only private_key_jwt or tls_client_auth are allowed")
+		}
+
+		for _, method := range op.config.TokenAuthnMethods {
+			if !slices.Contains([]goidc.AuthnMethod{goidc.AuthnMethodPrivateKeyJWT, goidc.AuthnMethodTLS}, method) {
+				return fmt.Errorf("[FAPI 2.0 5.3.1] %s is not a valid authentication method", method)
+			}
+		}
+
+		if op.config.AuthorizationCodeLifetimeSecs > 60 {
+			return errors.New("[FAPI 2.0 5.3.1] authorization code lifetime must be less than 60 seconds")
+		}
+
+		if !slices.Contains(op.config.GrantTypes, goidc.GrantAuthorizationCode) {
+			return errors.New("[FAPI 2.0 5.3.1] authorization_code grant must be required")
+		}
+
+		if !op.config.PARIsRequired {
+			return errors.New("[FAPI 2.0 5.3.1] pushed authorization request must be required")
+		}
+
+		if !op.config.PKCEIsRequired {
+			return errors.New("[FAPI 2.0 5.3.1] pkce must be required")
+		}
+
+		if slices.ContainsFunc(op.config.PKCEChallengeMethods, func(method goidc.CodeChallengeMethod) bool {
+			return method != goidc.CodeChallengeMethodSHA256
+		}) {
+			return errors.New("[FAPI 2.0 5.3.1] only pkce S256 code challenge method must be available")
+		}
+
+		if !op.config.IssuerRespParamIsEnabled {
+			return errors.New("[FAPI 2.0 5.3.1] pkce must be enabled")
+		}
+
+		if op.config.PARLifetimeSecs > 600 {
+			return errors.New("[FAPI 2.0 5.3.1] par request_uri lifetime must be less than 600 seconds")
+		}
+	}
+
+	return nil
 }
 
 // nonZeroOrDefault returns the first argument "s1" if it is non-nil and non-zero.
@@ -482,4 +566,62 @@ func nonZeroOrDefault[T any](s1 T, s2 T) T {
 
 func isNil(i any) bool {
 	return i == nil
+}
+
+func funcName(f any) string {
+	parts := strings.Split(runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name(), "/")
+	return parts[len(parts)-1]
+}
+
+const (
+	defaultStorageMaxSize = 100
+
+	defaultAuthnSessionTimeoutSecs        = 1800 // 30 minutes.
+	defaultIDTokenLifetimeSecs            = 600
+	defaultTokenLifetimeSecs              = 300
+	defaultJWTLifetimeSecs                = 600
+	defaultLogoutSessionTimeoutSecs       = 1800 // 30 minutes.
+	defaultPARLifetimeSecs                = 60   // 1 minute.
+	defaultRefreshTokenLifetimeSecs       = 600
+	defaultCIBADefaultSessionLifetimeSecs = 60
+	defaultCIBAPollingIntervalSecs        = 5
+	defaultAuthorizationCodeLifetimeSecs  = 60
+
+	defaultAsymmetricSigAlg            = goidc.RS256
+	defaultSymmetricSigAlg             = goidc.HS256
+	defaultOpenIDFedTrustChainMaxDepth = 5
+	defaultOpenIDFedRegType            = goidc.ClientRegistrationTypeAutomatic
+
+	defaultEndpointWellKnown                    = "/.well-known/openid-configuration"
+	defaultEndpointJSONWebKeySet                = "/jwks"
+	defaultEndpointPushedAuthorizationRequest   = "/par"
+	defaultEndpointAuthorize                    = "/authorize"
+	defaultEndpointToken                        = "/token"
+	defaultEndpointUserInfo                     = "/userinfo"
+	defaultEndpointDynamicClient                = "/register"
+	defaultEndpointTokenIntrospection           = "/introspect"
+	defaultEndpointTokenRevocation              = "/revoke"
+	defaultEndpointCIBA                         = "/bc-authorize"
+	defaultEndpointOpenIDFederation             = "/.well-known/openid-federation"
+	defaultEndpointOpenIDFederationRegistration = "/federation/register"
+	defaultEndpointOpenIDFederationSignedJWKS   = "/signed-jwks"
+	defaultEndpointEndSession                   = "/logout"
+	defaultEndpointSSFJWKS                      = "/ssf/jwks"
+	defaultEndpointSSFConfiguration             = "/ssf/stream"
+	defaultEndpointSSFStatus                    = "/ssf/status"
+	defaultEndpointSSFAddSubject                = "/ssf/subject:add"
+	defaultEndpointSSFRemoveSubject             = "/ssf/subject:remove"
+	defaultEndpointSSFVerification              = "/ssf/verify"
+	defaultEndpointSSFPolling                   = "/ssf/poll"
+)
+
+func defaultTokenOptionsFunc(_ context.Context, _ *goidc.Grant, _ *goidc.Client) goidc.TokenOptions {
+	return goidc.NewOpaqueTokenOptions(defaultTokenLifetimeSecs)
+}
+
+func defaultCompareAuthDetailsFunc(_ context.Context, granted, request []goidc.AuthDetail) error {
+	if !reflect.DeepEqual(granted, request) {
+		return goidc.NewError(goidc.ErrorCodeInvalidAuthDetails, "invalid authorization details")
+	}
+	return nil
 }

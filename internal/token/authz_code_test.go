@@ -1,10 +1,10 @@
 package token
 
 import (
+	"context"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
-	"fmt"
 	"math/big"
 	"net/http"
 	"testing"
@@ -100,12 +100,12 @@ func TestGenerateGrant_AuthorizationCodeGrant_AuthDetails(t *testing.T) {
 
 	// Given.
 	ctx, client, session := setUpAuthzCodeGrant(t)
-	ctx.RichAuthorizationIsEnabled = true
-	ctx.AuthDetailTypes = []goidc.AuthDetailType{"type1", "type2"}
-	ctx.CompareAuthDetailsFunc = func(granted, requested []goidc.AuthorizationDetail) error {
+	ctx.RARIsEnabled = true
+	ctx.RARDetailTypes = []goidc.AuthDetailType{"type1", "type2"}
+	ctx.RARCompareDetailsFunc = func(_ context.Context, granted, requested []goidc.AuthDetail) error {
 		return nil
 	}
-	authDetails := []goidc.AuthorizationDetail{
+	authDetails := []goidc.AuthDetail{
 		{
 			"type":         "type1",
 			"random_claim": "random_value",
@@ -201,12 +201,12 @@ func TestGenerateGrant_AuthorizationCodeGrant_AuthDetails_ClientRequestsSubset(t
 
 	// Given.
 	ctx, client, session := setUpAuthzCodeGrant(t)
-	ctx.RichAuthorizationIsEnabled = true
-	ctx.AuthDetailTypes = []goidc.AuthDetailType{"type1", "type2"}
-	ctx.CompareAuthDetailsFunc = func(granted, requested []goidc.AuthorizationDetail) error {
+	ctx.RARIsEnabled = true
+	ctx.RARDetailTypes = []goidc.AuthDetailType{"type1", "type2"}
+	ctx.RARCompareDetailsFunc = func(_ context.Context, granted, requested []goidc.AuthDetail) error {
 		return nil
 	}
-	session.GrantedAuthDetails = []goidc.AuthorizationDetail{
+	session.GrantedAuthDetails = []goidc.AuthDetail{
 		{
 			"type":         "type1",
 			"random_claim": "random_value",
@@ -221,7 +221,7 @@ func TestGenerateGrant_AuthorizationCodeGrant_AuthDetails_ClientRequestsSubset(t
 		grantType:   goidc.GrantAuthorizationCode,
 		redirectURI: client.RedirectURIs[0],
 		code:        session.AuthCode,
-		authDetails: []goidc.AuthorizationDetail{
+		authDetails: []goidc.AuthDetail{
 			map[string]any{
 				"type":         "type1",
 				"random_claim": "random_value",
@@ -450,35 +450,83 @@ func TestGenerateGrant_AuthorizationCodeGrant_PKCEDowngradeIsMitigated(t *testin
 	}
 }
 
-func TestIsPkceValid(t *testing.T) {
+func TestValidatePKCE(t *testing.T) {
 	testCases := []struct {
+		name                string
 		codeVerifier        string
 		codeChallenge       string
 		codeChallengeMethod goidc.CodeChallengeMethod
-		isValid             bool
+		wantErr             bool
 	}{
-		{"4ea55634198fb6a0c120d46b26359cf50ccea86fd03302b9bca9fa98", "ZObPYv2iA-CObk06I1Z0q5zWRG7gbGjZEWLX5ZC6rjQ", goidc.CodeChallengeMethodSHA256, true},
-		{"42d92ec716da149b8c0a553d5cbbdc5fd474625cdffe7335d643105b", "yQ0Wg2MXS83nBOaS3yit-n-xEaEw5LQ8TlhtX_2NkLw", goidc.CodeChallengeMethodSHA256, true},
-		{"179de59c7146cbb47757e7bc796c9b21d4a2be62535c4f577566816a", "ZObPYv2iA-CObk06I1Z0q5zWRG7gbGjZEWLX5ZC6rjQ", goidc.CodeChallengeMethodSHA256, false},
-		{"179de59c7146cbb47757e7bc796c9b21d4a2be62535c4f577566816a", "179de59c7146cbb47757e7bc796c9b21d4a2be62535c4f577566816a", goidc.CodeChallengeMethodSHA256, false},
-		{"", "ZObPYv2iA-CObk06I1Z0q5zWRG7gbGjZEWLX5ZC6rjQ", goidc.CodeChallengeMethodSHA256, false},
-		{"179de59c7146cbb47757e7bc796c9b21d4a2be62535c4f577566816a", "", goidc.CodeChallengeMethodSHA256, false},
-		{"random_string", "random_string", goidc.CodeChallengeMethodPlain, true},
+		{
+			name:                "sha256_valid_1",
+			codeVerifier:        "4ea55634198fb6a0c120d46b26359cf50ccea86fd03302b9bca9fa98",
+			codeChallenge:       "ZObPYv2iA-CObk06I1Z0q5zWRG7gbGjZEWLX5ZC6rjQ",
+			codeChallengeMethod: goidc.CodeChallengeMethodSHA256,
+		},
+		{
+			name:                "sha256_valid_2",
+			codeVerifier:        "42d92ec716da149b8c0a553d5cbbdc5fd474625cdffe7335d643105b",
+			codeChallenge:       "yQ0Wg2MXS83nBOaS3yit-n-xEaEw5LQ8TlhtX_2NkLw",
+			codeChallengeMethod: goidc.CodeChallengeMethodSHA256,
+		},
+		{
+			name:                "sha256_wrong_verifier",
+			codeVerifier:        "179de59c7146cbb47757e7bc796c9b21d4a2be62535c4f577566816a",
+			codeChallenge:       "ZObPYv2iA-CObk06I1Z0q5zWRG7gbGjZEWLX5ZC6rjQ",
+			codeChallengeMethod: goidc.CodeChallengeMethodSHA256,
+			wantErr:             true,
+		},
+		{
+			name:                "sha256_verifier_as_challenge",
+			codeVerifier:        "179de59c7146cbb47757e7bc796c9b21d4a2be62535c4f577566816a",
+			codeChallenge:       "179de59c7146cbb47757e7bc796c9b21d4a2be62535c4f577566816a",
+			codeChallengeMethod: goidc.CodeChallengeMethodSHA256,
+			wantErr:             true,
+		},
+		{
+			name:                "sha256_empty_verifier",
+			codeVerifier:        "",
+			codeChallenge:       "ZObPYv2iA-CObk06I1Z0q5zWRG7gbGjZEWLX5ZC6rjQ",
+			codeChallengeMethod: goidc.CodeChallengeMethodSHA256,
+			wantErr:             true,
+		},
+		{
+			name:                "sha256_empty_challenge_with_verifier",
+			codeVerifier:        "179de59c7146cbb47757e7bc796c9b21d4a2be62535c4f577566816a",
+			codeChallenge:       "",
+			codeChallengeMethod: goidc.CodeChallengeMethodSHA256,
+			wantErr:             true,
+		},
+		{
+			name:                "plain_valid",
+			codeVerifier:        "0123456789abcdef0123456789abcdef0123456789a",
+			codeChallenge:       "0123456789abcdef0123456789abcdef0123456789a",
+			codeChallengeMethod: goidc.CodeChallengeMethodPlain,
+		},
 	}
 
-	for i, testCase := range testCases {
-		t.Run(
-			fmt.Sprintf("case %v", i),
-			func(t *testing.T) {
-				// When.
-				got := isPKCEValid(testCase.codeVerifier, testCase.codeChallenge, testCase.codeChallengeMethod)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Given.
+			ctx := oidctest.NewContext(t)
+			ctx.PKCEIsEnabled = true
+			ctx.PKCEDefaultChallengeMethod = tc.codeChallengeMethod
+			ctx.PKCEChallengeMethods = []goidc.CodeChallengeMethod{tc.codeChallengeMethod}
 
-				// Then.
-				if got != testCase.isValid {
-					t.Errorf("isPKCEValid() = %t, want %t", got, testCase.isValid)
-				}
-			},
-		)
+			session := &goidc.AuthnSession{}
+			session.CodeChallenge = tc.codeChallenge
+			session.CodeChallengeMethod = tc.codeChallengeMethod
+			req := request{codeVerifier: tc.codeVerifier}
+
+			// When.
+			err := validatePKCE(ctx, req, nil, session)
+
+			// Then.
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validatePKCE() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
 	}
 }
 

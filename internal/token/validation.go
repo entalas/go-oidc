@@ -1,6 +1,8 @@
 package token
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/luikyv/go-oidc/internal/dpop"
@@ -11,9 +13,9 @@ import (
 )
 
 // ValidateBinding checks both DPoP and TLS binding for issuing a token.
-func ValidateBinding(ctx oidc.Context, c *goidc.Client, opts *bindindValidationsOptions) error {
+func ValidateBinding(ctx oidc.Context, c *goidc.Client, opts *bindindValidationOptions) error {
 	if opts == nil {
-		opts = &bindindValidationsOptions{}
+		opts = &bindindValidationOptions{}
 	}
 	if err := validateBindingDPoP(ctx, c, *opts); err != nil {
 		return err
@@ -26,7 +28,7 @@ func ValidateBinding(ctx oidc.Context, c *goidc.Client, opts *bindindValidations
 	return validateBindingRequirement(ctx)
 }
 
-func validateBindingDPoP(ctx oidc.Context, c *goidc.Client, opts bindindValidationsOptions) error {
+func validateBindingDPoP(ctx oidc.Context, c *goidc.Client, opts bindindValidationOptions) error {
 
 	if !ctx.DPoPIsEnabled {
 		return nil
@@ -50,7 +52,7 @@ func validateBindingDPoP(ctx oidc.Context, c *goidc.Client, opts bindindValidati
 	})
 }
 
-func validateBindingTLS(ctx oidc.Context, c *goidc.Client, opts bindindValidationsOptions) error {
+func validateBindingTLS(ctx oidc.Context, c *goidc.Client, opts bindindValidationOptions) error {
 	if !ctx.MTLSTokenBindingIsEnabled {
 		return nil
 	}
@@ -113,38 +115,35 @@ func validateResources(ctx oidc.Context, availableResources goidc.Resources, req
 	return nil
 }
 
-func validateAuthDetails(ctx oidc.Context, grantedDetails []goidc.AuthorizationDetail, req request) error {
-	if !shouldValidateAuthDetails(ctx, req) {
-		return nil
-	}
-
-	if err := validateAuthDetailsTypes(ctx, req); err != nil {
-		return err
-	}
-
-	if err := ctx.CompareAuthDetails(grantedDetails, req.authDetails); err != nil {
-		return goidc.WrapError(goidc.ErrorCodeInvalidAuthDetails, "invalid authorization details", err)
-	}
-
-	return nil
-}
-
-func validateAuthDetailsTypes(ctx oidc.Context, req request) error {
-	if !shouldValidateAuthDetails(ctx, req) {
+// validateAuthDetails validates the auth details for the token request.
+// Parameters:
+//   - granted: The granted auth details. If nil, no auth details were previouly granted.
+func validateAuthDetails(ctx oidc.Context, req request, c *goidc.Client, granted []goidc.AuthDetail) error {
+	if !ctx.RARIsEnabled || req.authDetails != nil {
 		return nil
 	}
 
 	for _, detail := range req.authDetails {
-		if !slices.Contains(ctx.AuthDetailTypes, detail.Type()) {
-			return goidc.NewError(goidc.ErrorCodeInvalidAuthDetails, "invalid authorization details")
+		if !slices.Contains(ctx.RARDetailTypes, detail.Type()) {
+			return goidc.NewError(goidc.ErrorCodeInvalidAuthDetails, "authorization detail not allowed")
+		}
+
+		if c.AuthDetailTypes != nil && !slices.Contains(c.AuthDetailTypes, detail.Type()) {
+			return goidc.NewError(goidc.ErrorCodeInvalidAuthDetails, "authorization detail not allowed")
+		}
+
+		if err := ctx.RARValidateDetail(detail); err != nil {
+			return goidc.WrapError(goidc.ErrorCodeInvalidAuthDetails, "invalid authorization detail", err)
+		}
+	}
+
+	if granted != nil {
+		if err := ctx.RARCompareAuthDetails(req.authDetails, granted); err != nil {
+			return goidc.WrapError(goidc.ErrorCodeInvalidAuthDetails, "invalid authorization details", err)
 		}
 	}
 
 	return nil
-}
-
-func shouldValidateAuthDetails(ctx oidc.Context, req request) bool {
-	return ctx.RichAuthorizationIsEnabled && req.authDetails != nil
 }
 
 func validateScopes(_ oidc.Context, req request, session *goidc.AuthnSession) error {
@@ -166,45 +165,43 @@ func containsAllScopes(availableScopes string, requestedScopes string) bool {
 	return true
 }
 
-func validatePkce(ctx oidc.Context, req request, _ *goidc.Client, session *goidc.AuthnSession) error {
+func validatePKCE(ctx oidc.Context, req request, _ *goidc.Client, as *goidc.AuthnSession) error {
 	if !ctx.PKCEIsEnabled {
 		return nil
 	}
 
-	if session.CodeChallenge == "" {
+	if as.CodeChallenge == "" {
 		// [RFC 9700] a token request containing a code_verifier parameter is
 		// accepted only if a code_challenge parameter was present in the authorization request.
 		if req.codeVerifier != "" {
-			return goidc.NewError(goidc.ErrorCodeInvalidGrant, "invalid code_verifier")
+			return goidc.WrapError(goidc.ErrorCodeInvalidGrant, "invalid code_verifier",
+				errors.New("code_verifier was informed in the request, but no code_challenge was provided previously"))
 		}
 		return nil
 	}
 
-	codeChallengeMethod := session.CodeChallengeMethod
-	if codeChallengeMethod == "" {
-		codeChallengeMethod = ctx.PKCEDefaultChallengeMethod
-	}
-
 	// [RFC 7636] with a minimum length of 43 characters and a maximum length of 128 characters.
-	codeVerifierLengh := len(req.codeVerifier)
-	if codeVerifierLengh < 43 || codeVerifierLengh > 128 {
+	if verifierLengh := len(req.codeVerifier); verifierLengh < 43 || verifierLengh > 128 {
 		return goidc.NewError(goidc.ErrorCodeInvalidGrant, "invalid code_verifier")
 	}
 
-	if !isPKCEValid(req.codeVerifier, session.CodeChallenge, codeChallengeMethod) {
-		return goidc.NewError(goidc.ErrorCodeInvalidGrant, "invalid code_verifier")
+	method := ctx.PKCEDefaultChallengeMethod
+	if as.CodeChallengeMethod != "" && slices.Contains(ctx.PKCEChallengeMethods, as.CodeChallengeMethod) {
+		method = as.CodeChallengeMethod
+	}
+
+	switch verifier, challenge := req.codeVerifier, as.CodeChallenge; method {
+	case goidc.CodeChallengeMethodPlain:
+		if verifier != challenge {
+			return goidc.NewError(goidc.ErrorCodeInvalidGrant, "invalid code_verifier")
+		}
+	case goidc.CodeChallengeMethodSHA256:
+		if hashutil.Thumbprint(verifier) != challenge {
+			return goidc.NewError(goidc.ErrorCodeInvalidGrant, "invalid code_verifier")
+		}
+	default:
+		return goidc.WrapError(goidc.ErrorCodeInvalidGrant, "invalid code_verifier", fmt.Errorf("pkce method %s is not supported", method))
 	}
 
 	return nil
-}
-
-func isPKCEValid(codeVerifier, codeChallenge string, codeChallengeMethod goidc.CodeChallengeMethod) bool {
-	switch codeChallengeMethod {
-	case goidc.CodeChallengeMethodPlain:
-		return codeChallenge == codeVerifier
-	case goidc.CodeChallengeMethodSHA256:
-		return codeChallenge == hashutil.Thumbprint(codeVerifier)
-	}
-
-	return false
 }

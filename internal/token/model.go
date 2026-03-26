@@ -16,7 +16,7 @@ type GrantOptions struct {
 	Subject              string
 	ClientID             string
 	Scopes               string
-	AuthDetails          []goidc.AuthorizationDetail
+	AuthDetails          []goidc.AuthDetail
 	Resources            goidc.Resources
 	Nonce                string
 	JWKThumbprint        string
@@ -38,7 +38,7 @@ func NewGrant(ctx oidc.Context, c *goidc.Client, opts GrantOptions) (*goidc.Gran
 		ClientCertThumbprint: opts.ClientCertThumbprint,
 		CreatedAtTimestamp:   timeutil.TimestampNow(),
 	}
-	if ctx.RichAuthorizationIsEnabled {
+	if ctx.RARIsEnabled {
 		grant.AuthDetails = opts.AuthDetails
 	}
 	if ctx.ResourceIndicatorsIsEnabled {
@@ -57,72 +57,6 @@ func NewGrant(ctx oidc.Context, c *goidc.Client, opts GrantOptions) (*goidc.Gran
 	}
 
 	return grant, nil
-}
-
-type Options struct {
-	Scopes      string
-	AuthDetails []goidc.AuthorizationDetail
-	Resources   goidc.Resources
-}
-
-// Issue creates a new access token for the grant, persists both the grant and
-// token, and returns the token and its serialized value.
-func Issue(ctx oidc.Context, grant *goidc.Grant, c *goidc.Client, opts *Options) (*goidc.Token, string, error) {
-	if opts == nil {
-		opts = &Options{}
-	}
-
-	tknOpts := ctx.TokenOptions(grant, c)
-	now := timeutil.TimestampNow()
-	tkn := &goidc.Token{
-		GrantID:              grant.ID,
-		Subject:              grant.Subject,
-		ClientID:             grant.ClientID,
-		Scopes:               grant.Scopes,
-		AuthDetails:          grant.AuthDetails,
-		Resources:            grant.Resources,
-		JWKThumbprint:        grant.JWKThumbprint,
-		ClientCertThumbprint: grant.ClientCertThumbprint,
-		CreatedAtTimestamp:   now,
-		ExpiresAtTimestamp:   now + tknOpts.LifetimeSecs,
-		Format:               tknOpts.Format,
-		SigAlg:               tknOpts.JWTSigAlg,
-	}
-	if tknOpts.Format == goidc.TokenFormatOpaque {
-		tkn.ID = ctx.OpaqueToken()
-	} else {
-		tkn.ID = ctx.JWTID()
-	}
-	if tkn.JWKThumbprint != "" {
-		tkn.Type = goidc.TokenTypeDPoP
-	} else {
-		tkn.Type = goidc.TokenTypeBearer
-	}
-	if opts.Scopes != "" {
-		tkn.Scopes = opts.Scopes
-	}
-	if ctx.RichAuthorizationIsEnabled && opts.AuthDetails != nil {
-		tkn.AuthDetails = opts.AuthDetails
-	}
-	if ctx.ResourceIndicatorsIsEnabled && opts.Resources != nil {
-		tkn.Resources = opts.Resources
-	}
-
-	tokenValue, err := makeAccessToken(ctx, tkn, grant)
-	if err != nil {
-		return nil, "", err
-	}
-	if grant.ExpiresAtTimestamp == 0 {
-		grant.ExpiresAtTimestamp = tkn.ExpiresAtTimestamp
-	}
-	if err := ctx.SaveGrant(grant); err != nil {
-		return nil, "", err
-	}
-	if err := ctx.SaveToken(tkn); err != nil {
-		return nil, "", err
-	}
-
-	return tkn, tokenValue, nil
 }
 
 type IDTokenOptions struct {
@@ -146,7 +80,7 @@ type request struct {
 	refreshToken string
 	codeVerifier string
 	resources    goidc.Resources
-	authDetails  []goidc.AuthorizationDetail
+	authDetails  []goidc.AuthDetail
 	assertion    string
 	authReqID    string
 }
@@ -165,7 +99,7 @@ func newRequest(r *http.Request) request {
 	}
 
 	if authDetails := r.PostFormValue("authorization_details"); authDetails != "" {
-		var authDetailsObject []goidc.AuthorizationDetail
+		var authDetailsObject []goidc.AuthDetail
 		if err := json.Unmarshal([]byte(authDetails), &authDetailsObject); err == nil {
 			req.authDetails = authDetailsObject
 		}
@@ -175,14 +109,14 @@ func newRequest(r *http.Request) request {
 }
 
 type response struct {
-	AccessToken          string                      `json:"access_token,omitempty"`
-	IDToken              string                      `json:"id_token,omitempty"`
-	RefreshToken         string                      `json:"refresh_token,omitempty"`
-	ExpiresIn            int                         `json:"expires_in,omitempty"`
-	TokenType            goidc.TokenType             `json:"token_type,omitempty"`
-	Scopes               string                      `json:"scope,omitempty"`
-	AuthorizationDetails []goidc.AuthorizationDetail `json:"authorization_details,omitempty"`
-	Resources            goidc.Resources             `json:"resources,omitempty"`
+	AccessToken          string             `json:"access_token,omitempty"`
+	IDToken              string             `json:"id_token,omitempty"`
+	RefreshToken         string             `json:"refresh_token,omitempty"`
+	ExpiresIn            int                `json:"expires_in,omitempty"`
+	TokenType            goidc.TokenType    `json:"token_type,omitempty"`
+	Scopes               string             `json:"scope,omitempty"`
+	AuthorizationDetails []goidc.AuthDetail `json:"authorization_details,omitempty"`
+	Resources            goidc.Resources    `json:"resources,omitempty"`
 }
 
 type cibaResponse struct {
@@ -202,10 +136,9 @@ func newQueryRequest(req *http.Request) queryRequest {
 	}
 }
 
-type bindindValidationsOptions struct {
+type bindindValidationOptions struct {
 	tlsIsRequired     bool
 	tlsCertThumbprint string
 	dpopIsRequired    bool
 	dpopJWKThumbprint string
-	// dpop              dpop.ValidationOptions
 }

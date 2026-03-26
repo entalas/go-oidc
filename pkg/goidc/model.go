@@ -445,6 +445,7 @@ func (steps authnSteps) Authenticate(w http.ResponseWriter, r *http.Request, as 
 		nextIdx := idx + 1
 		// Return success if the current step is the last step.
 		if nextIdx == len(steps) {
+			as.Status = StatusSuccess
 			return StatusSuccess, nil
 		}
 
@@ -493,17 +494,17 @@ type TokenConfirmation struct {
 
 type TokenInfo struct {
 	// GrantID is the ID of the grant session associated to token.
-	GrantID               string                `json:"-"`
-	IsActive              bool                  `json:"active"`
-	Type                  TokenTypeHint         `json:"token_type,omitempty"`
-	Scopes                string                `json:"scope,omitempty"`
-	AuthorizationDetails  []AuthorizationDetail `json:"authorization_details,omitempty"`
-	ResourceAudiences     Resources             `json:"aud,omitempty"`
-	ClientID              string                `json:"client_id,omitempty"`
-	Subject               string                `json:"sub,omitempty"`
-	ExpiresAtTimestamp    int                   `json:"exp,omitempty"`
-	Confirmation          *TokenConfirmation    `json:"cnf,omitempty"`
-	AdditionalTokenClaims map[string]any        `json:"-"`
+	GrantID               string             `json:"-"`
+	IsActive              bool               `json:"active"`
+	Type                  TokenTypeHint      `json:"token_type,omitempty"`
+	Scopes                string             `json:"scope,omitempty"`
+	AuthorizationDetails  []AuthDetail       `json:"authorization_details,omitempty"`
+	ResourceAudiences     Resources          `json:"aud,omitempty"`
+	ClientID              string             `json:"client_id,omitempty"`
+	Subject               string             `json:"sub,omitempty"`
+	ExpiresAtTimestamp    int                `json:"exp,omitempty"`
+	Confirmation          *TokenConfirmation `json:"cnf,omitempty"`
+	AdditionalTokenClaims map[string]any     `json:"-"`
 }
 
 func (ti TokenInfo) MarshalJSON() ([]byte, error) {
@@ -525,31 +526,31 @@ func (ti TokenInfo) MarshalJSON() ([]byte, error) {
 }
 
 type AuthorizationParameters struct {
-	RequestURI              string                `json:"request_uri,omitempty"`
-	RequestObject           string                `json:"request,omitempty"`
-	RedirectURI             string                `json:"redirect_uri,omitempty"`
-	ResponseMode            ResponseMode          `json:"response_mode,omitempty"`
-	ResponseType            ResponseType          `json:"response_type,omitempty"`
-	Scopes                  string                `json:"scope,omitempty"`
-	State                   string                `json:"state,omitempty"`
-	Nonce                   string                `json:"nonce,omitempty"`
-	CodeChallenge           string                `json:"code_challenge,omitempty"`
-	CodeChallengeMethod     CodeChallengeMethod   `json:"code_challenge_method,omitempty"`
-	Prompt                  PromptType            `json:"prompt,omitempty"`
-	MaxAuthnAgeSecs         *int                  `json:"max_age,omitempty"`
-	Display                 DisplayValue          `json:"display,omitempty"`
-	ACRValues               string                `json:"acr_values,omitempty"`
-	Claims                  *ClaimsObject         `json:"claims,omitempty"`
-	AuthDetails             []AuthorizationDetail `json:"authorization_details,omitempty"`
-	Resources               Resources             `json:"resource,omitempty"`
-	DPoPJKT                 string                `json:"dpop_jkt,omitempty"`
-	LoginHint               string                `json:"login_hint,omitempty"`
-	LoginTokenHint          string                `json:"login_hint_token,omitempty"`
-	IDTokenHint             string                `json:"id_token_hint,omitempty"`
-	ClientNotificationToken string                `json:"client_notification_token,omitempty"`
-	BindingMessage          string                `json:"binding_message,omitempty"`
-	UserCode                string                `json:"user_code,omitempty"`
-	RequestedExpiry         *int                  `json:"requested_expiry,omitempty"`
+	RequestURI              string              `json:"request_uri,omitempty"`
+	RequestObject           string              `json:"request,omitempty"`
+	RedirectURI             string              `json:"redirect_uri,omitempty"`
+	ResponseMode            ResponseMode        `json:"response_mode,omitempty"`
+	ResponseType            ResponseType        `json:"response_type,omitempty"`
+	Scopes                  string              `json:"scope,omitempty"`
+	State                   string              `json:"state,omitempty"`
+	Nonce                   string              `json:"nonce,omitempty"`
+	CodeChallenge           string              `json:"code_challenge,omitempty"`
+	CodeChallengeMethod     CodeChallengeMethod `json:"code_challenge_method,omitempty"`
+	Prompt                  PromptType          `json:"prompt,omitempty"`
+	MaxAuthnAgeSecs         *int                `json:"max_age,omitempty"`
+	Display                 DisplayValue        `json:"display,omitempty"`
+	ACRValues               string              `json:"acr_values,omitempty"`
+	Claims                  *ClaimsObject       `json:"claims,omitempty"`
+	AuthDetails             []AuthDetail        `json:"authorization_details,omitempty"`
+	Resources               Resources           `json:"resource,omitempty"`
+	DPoPJKT                 string              `json:"dpop_jkt,omitempty"`
+	LoginHint               string              `json:"login_hint,omitempty"`
+	LoginTokenHint          string              `json:"login_hint_token,omitempty"`
+	IDTokenHint             string              `json:"id_token_hint,omitempty"`
+	ClientNotificationToken string              `json:"client_notification_token,omitempty"`
+	BindingMessage          string              `json:"binding_message,omitempty"`
+	UserCode                string              `json:"user_code,omitempty"`
+	RequestedExpiry         *int                `json:"requested_expiry,omitempty"`
 }
 
 type Resources []string
@@ -632,106 +633,59 @@ type ClaimObjectInfo struct {
 
 type AuthDetailType string
 
-// AuthorizationDetail represents an authorization details as a map.
-// It is a map instead of a struct, because its fields vary a lot depending on
-// the use case.
-type AuthorizationDetail map[string]any
+type RARValidateDetailFunc func(context.Context, AuthDetail) error
 
-func (d AuthorizationDetail) Type() AuthDetailType {
-	return AuthDetailType(d.string("type"))
-}
-
-func (d AuthorizationDetail) Identifier() string {
-	return d.string("identifier")
-}
-
-func (d AuthorizationDetail) Locations() []string {
-	return d.stringSlice("locations")
-}
-
-func (d AuthorizationDetail) Actions() []string {
-	return d.stringSlice("actions")
-}
-
-func (d AuthorizationDetail) DataTypes() []string {
-	return d.stringSlice("datatypes")
-}
-
-func (d AuthorizationDetail) stringSlice(key string) []string {
-	value, ok := d[key]
-	if !ok {
-		return nil
-	}
-
-	slice, ok := value.([]string)
-	if !ok {
-		return nil
-	}
-
-	return slice
-}
-
-func (d AuthorizationDetail) string(key string) string {
-	value, ok := d[key]
-	if !ok {
-		return ""
-	}
-
-	s, ok := value.(string)
-	if !ok {
-		return ""
-	}
-
-	return s
-}
-
-// TODO: Return a string instead of a struct.
-type HandleJWTBearerGrantAssertionFunc func(r *http.Request, assertion string) (JWTBearerGrantInfo, error)
-
-type JWTBearerGrantInfo struct {
-	Subject string
-	Store   map[string]any
-}
-
-type IsClientAllowedFunc func(*Client) bool
-
-type IsClientAllowedTokenInstrospectionFunc func(*Client, TokenInfo) bool
-
-// CompareAuthDetailsFunc defines a function used in authorization_code and
+// RARCompareDetailsFunc defines a function used in authorization_code and
 // refresh_token grant types to validate that the requested authorization details
 // are consistent with the granted ones.
-type CompareAuthDetailsFunc func(granted, requested []AuthorizationDetail) error
+type RARCompareDetailsFunc func(ctx context.Context, requested, granted []AuthDetail) error
 
-type GeneratePairwiseSubIDFunc func(ctx context.Context, sub string, client *Client) string
+// AuthDetail represents an authorization details as a map.
+// It is a map instead of a struct, because its fields vary a lot depending on
+// the use case.
+type AuthDetail map[string]any
+
+func (d AuthDetail) Type() AuthDetailType {
+	value, ok := d["type"]
+	if !ok {
+		return ""
+	}
+	typ, _ := value.(string)
+	return AuthDetailType(typ)
+}
+
+type JWTBearerHandleAssertionFunc func(r *http.Request, assertion string) (sub string, err error)
+
+type IsClientAllowedFunc func(context.Context, *Client) bool
+
+type IsClientAllowedTokenInstrospectionFunc func(context.Context, *Client, TokenInfo) bool
+
+type PairwiseSubjectFunc func(ctx context.Context, sub string, client *Client) string
+
+type CIBAProfile string
+
+const (
+	CIBAProfileOpenID CIBAProfile = "openid"
+	CIBAProfileFAPI   CIBAProfile = "fapi"
+)
 
 type CIBATokenDeliveryMode string
 
 const (
-	CIBATokenDeliveryModePoll CIBATokenDeliveryMode = "poll"
-	CIBATokenDeliveryModePing CIBATokenDeliveryMode = "ping"
-	CIBATokenDeliveryModePush CIBATokenDeliveryMode = "push"
+	CIBADeliveryModePoll CIBATokenDeliveryMode = "poll"
+	CIBADeliveryModePing CIBATokenDeliveryMode = "ping"
+	CIBADeliveryModePush CIBATokenDeliveryMode = "push"
 )
 
 func (mode CIBATokenDeliveryMode) IsNotificationMode() bool {
-	return mode == CIBATokenDeliveryModePing || mode == CIBATokenDeliveryModePush
+	return mode == CIBADeliveryModePing || mode == CIBADeliveryModePush
 }
 
 func (mode CIBATokenDeliveryMode) IsPollableMode() bool {
-	return mode == CIBATokenDeliveryModePoll || mode == CIBATokenDeliveryModePing
+	return mode == CIBADeliveryModePoll || mode == CIBADeliveryModePing
 }
 
-// InitBackAuthFunc allows modifying the authn session when initializing the
-// CIBA process.
-// If an error is returned, the authentication flow will not be initiated.
-type InitBackAuthFunc func(context.Context, *AuthnSession) error
-
-// ValidateBackAuthFunc validates a CIBA session during a client's polling
-// request to the token endpoint.
-// If an error other than [ErrorCodeAuthPending] or [ErrorCodeSlowDown] is
-// returned, the session will be terminated.
-type ValidateBackAuthFunc func(context.Context, *AuthnSession) error
-
-type HandleSessionFunc func(*http.Request, *AuthnSession, *Client) error
+type HandleSessionFunc func(context.Context, *AuthnSession, *Client) error
 
 type LogoutParameters struct {
 	IDTokenHint           string `json:"id_token_hint,omitempty"`
@@ -794,6 +748,7 @@ func (steps logoutSteps) Logout(w http.ResponseWriter, r *http.Request, ls *Logo
 		nextIdx := idx + 1
 		// Return success if the current step is the last step.
 		if nextIdx == len(steps) {
+			ls.Status = StatusSuccess
 			return StatusSuccess, nil
 		}
 

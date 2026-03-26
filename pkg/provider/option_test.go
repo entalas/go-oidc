@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/x509"
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 
@@ -524,12 +523,9 @@ func TestWithDCR(t *testing.T) {
 	var handleDCRFunc goidc.HandleDynamicClientFunc = func(*http.Request, string, *goidc.ClientMeta) error {
 		return nil
 	}
-	var validateInitialTokenFunc goidc.ValidateInitialAccessTokenFunc = func(context.Context, string) error {
-		return nil
-	}
 
 	// When.
-	err := WithDCR(handleDCRFunc, validateInitialTokenFunc)(p)
+	err := WithDCR(handleDCRFunc)(p)
 
 	// Then.
 	if err != nil {
@@ -542,10 +538,6 @@ func TestWithDCR(t *testing.T) {
 
 	if p.config.HandleDynamicClientFunc == nil {
 		t.Error("HandleDynamicClientFunc cannot be nil")
-	}
-
-	if p.config.ValidateInitialAccessTokenFunc == nil {
-		t.Error("ValidateInitialAccessTokenFunc cannot be nil")
 	}
 }
 
@@ -594,14 +586,14 @@ func TestWithClientIDFunc(t *testing.T) {
 	}
 }
 
-func TestWithClientCredentialsGrant(t *testing.T) {
+func TestWithGrantTypes(t *testing.T) {
 	// Given.
 	p := &Provider{
 		config: oidc.Configuration{},
 	}
 
 	// When.
-	err := WithClientCredentialsGrant()(p)
+	err := WithGrantTypes(goidc.GrantAuthorizationCode, goidc.GrantRefreshToken)(p)
 
 	// Then.
 	if err != nil {
@@ -610,34 +602,11 @@ func TestWithClientCredentialsGrant(t *testing.T) {
 
 	want := &Provider{
 		config: oidc.Configuration{
-			GrantTypes: []goidc.GrantType{goidc.GrantClientCredentials},
+			GrantTypes: []goidc.GrantType{goidc.GrantAuthorizationCode, goidc.GrantRefreshToken},
 		},
 	}
-	if diff := cmp.Diff(
-		p,
-		want,
-		cmp.AllowUnexported(Provider{}),
-	); diff != "" {
+	if diff := cmp.Diff(p, want, cmp.AllowUnexported(Provider{})); diff != "" {
 		t.Error(diff)
-	}
-}
-
-func TestWithRefreshTokenGrant(t *testing.T) {
-	// Given.
-	p := &Provider{
-		config: oidc.Configuration{},
-	}
-
-	// When.
-	err := WithRefreshTokenGrant()(p)
-
-	// Then.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !slices.Contains(p.config.GrantTypes, goidc.GrantRefreshToken) {
-		t.Error("refresh token grant is missing")
 	}
 }
 
@@ -737,14 +706,14 @@ func TestWithHandleGrantFunc(t *testing.T) {
 	}
 }
 
-func TestWithImplicitGrant(t *testing.T) {
+func TestWithGrantTypes_Implicit(t *testing.T) {
 	// Given.
 	p := &Provider{
 		config: oidc.Configuration{},
 	}
 
 	// When.
-	err := WithImplicitGrant()(p)
+	err := WithGrantTypes(goidc.GrantImplicit)(p)
 
 	// Then.
 	if err != nil {
@@ -845,7 +814,7 @@ func TestWithUnregisteredRedirectURIsForPAR(t *testing.T) {
 
 	want := &Provider{
 		config: oidc.Configuration{
-			PARAllowUnregisteredRedirectURI: true,
+			PARUnregisteredRedirectURIIsEnabled: true,
 		},
 	}
 	if diff := cmp.Diff(p, want, cmp.AllowUnexported(Provider{})); diff != "" {
@@ -1289,29 +1258,20 @@ func TestWithAuthorizationDetails(t *testing.T) {
 	p := &Provider{
 		config: oidc.Configuration{},
 	}
-	var compareDetailsFunc goidc.CompareAuthDetailsFunc = func(
-		granted, requested []goidc.AuthorizationDetail,
-	) error {
-		return nil
-	}
 
 	// When.
-	err := WithRichAuthorization(compareDetailsFunc, "detail_type")(p)
+	err := WithRAR("detail_type")(p)
 
 	// Then.
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !p.config.RichAuthorizationIsEnabled {
+	if !p.config.RARIsEnabled {
 		t.Errorf("auth details must be enabled")
 	}
 
-	if p.config.CompareAuthDetailsFunc == nil {
-		t.Error("CompareAuthDetailsFunc cannot be nil")
-	}
-
-	if p.config.AuthDetailTypes == nil {
+	if p.config.RARDetailTypes == nil {
 		t.Error("auth detail types should be set")
 	}
 
@@ -1352,7 +1312,7 @@ func TestWithTLSCertTokenBinding(t *testing.T) {
 	}
 
 	// When.
-	err := WithTLSCertTokenBinding()(p)
+	err := WithTLSTokenBinding()(p)
 
 	// Then.
 	if err != nil {
@@ -1376,7 +1336,7 @@ func TestWithTLSCertTokenBindingRequired(t *testing.T) {
 	}
 
 	// When.
-	err := WithTLSCertTokenBindingRequired()(p)
+	err := WithTLSTokenBindingRequired()(p)
 
 	// Then.
 	if err != nil {
@@ -1698,15 +1658,16 @@ func TestWithAuthenticationSessionTimeout(t *testing.T) {
 	}
 }
 
-func TestWithStaticClient(t *testing.T) {
+func TestWithStaticClients(t *testing.T) {
 	// Given.
 	p := &Provider{
 		config: oidc.Configuration{},
 	}
-	c, _ := oidctest.NewClient(t)
+	c1, _ := oidctest.NewClient(t)
+	c2, _ := oidctest.NewClient(t)
 
 	// When.
-	err := WithStaticClient(c)(p)
+	err := WithStaticClients(c1, c2)(p)
 
 	// Then.
 	if err != nil {
@@ -1715,7 +1676,7 @@ func TestWithStaticClient(t *testing.T) {
 
 	want := &Provider{
 		config: oidc.Configuration{
-			StaticClients: []*goidc.Client{c},
+			StaticClients: []*goidc.Client{c1, c2},
 		},
 	}
 	if diff := cmp.Diff(p, want, cmp.AllowUnexported(Provider{}), cmpopts.IgnoreUnexported(goidc.Client{})); diff != "" {
@@ -1901,8 +1862,8 @@ func TestJWTBearerGrant(t *testing.T) {
 	}
 
 	// When.
-	err := WithJWTBearerGrant(func(r *http.Request, assertion string) (goidc.JWTBearerGrantInfo, error) {
-		return goidc.JWTBearerGrantInfo{}, nil
+	err := WithJWTBearerHandleAssertionFunc(func(r *http.Request, assertion string) (string, error) {
+		return "", nil
 	})(p)
 
 	// Then.
@@ -1910,8 +1871,8 @@ func TestJWTBearerGrant(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if p.config.HandleJWTBearerGrantAssertionFunc == nil {
-		t.Error("HandleJWTBearerGrantAssertionFunc cannot be nil")
+	if p.config.JWTBearerHandleAssertionFunc == nil {
+		t.Error("JWTBearerHandleAssertionFunc cannot be nil")
 	}
 }
 
@@ -2211,7 +2172,7 @@ func TestWithJWTBearerGrantClientAuthnRequired(t *testing.T) {
 
 	want := &Provider{
 		config: oidc.Configuration{
-			JWTBearerGrantClientAuthnIsRequired: true,
+			JWTBearerClientAuthnIsRequired: true,
 		},
 	}
 	if diff := cmp.Diff(p, want, cmp.AllowUnexported(Provider{})); diff != "" {
@@ -2254,14 +2215,14 @@ func TestWithGeneratePairwiseSubIDFunc(t *testing.T) {
 	}
 
 	// When.
-	err := WithGeneratePairwiseSubIDFunc(genFunc)(p)
+	err := WithPairwiseSubjectFunc(genFunc)(p)
 
 	// Then.
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if p.config.GeneratePairwiseSubIDFunc == nil {
+	if p.config.PairwiseSubjectFunc == nil {
 		t.Error("GeneratePairwiseSubIDFunc cannot be nil")
 	}
 }
@@ -2946,55 +2907,25 @@ func TestWithTokenAuthnMethods(t *testing.T) {
 	}
 }
 
-func TestWithAuthorizationCodeGrant(t *testing.T) {
+func TestWithCIBAHandleSessionFunc(t *testing.T) {
 	// Given.
 	p := &Provider{
 		config: oidc.Configuration{},
 	}
+	f := func(ctx context.Context, as *goidc.AuthnSession, c *goidc.Client) error {
+		return nil
+	}
 
 	// When.
-	err := WithAuthorizationCodeGrant()(p)
+	err := WithCIBAHandleSessionFunc(f)(p)
 
 	// Then.
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !slices.Contains(p.config.GrantTypes, goidc.GrantAuthorizationCode) {
-		t.Error("authorization code grant is missing")
-	}
-}
-
-func TestWithCIBAGrant(t *testing.T) {
-	// Given.
-	p := &Provider{
-		config: oidc.Configuration{},
-	}
-	initFunc := func(ctx context.Context, as *goidc.AuthnSession) error {
-		return nil
-	}
-	validateFunc := func(ctx context.Context, as *goidc.AuthnSession) error {
-		return nil
-	}
-
-	// When.
-	err := WithCIBAGrant(initFunc, validateFunc)(p)
-
-	// Then.
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !slices.Contains(p.config.GrantTypes, goidc.GrantCIBA) {
-		t.Error("CIBA grant is missing")
-	}
-
-	if p.config.InitBackAuthFunc == nil {
-		t.Error("InitBackAuthFunc cannot be nil")
-	}
-
-	if p.config.ValidateBackAuthFunc == nil {
-		t.Error("ValidateBackAuthFunc cannot be nil")
+	if p.config.CIBAHandleSessionFunc == nil {
+		t.Error("CIBAHandleSessionFunc cannot be nil")
 	}
 }
 

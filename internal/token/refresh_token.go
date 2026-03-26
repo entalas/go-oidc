@@ -51,7 +51,7 @@ func generateRefreshTokenGrant(ctx oidc.Context, req request) (response, error) 
 		return response{}, err
 	}
 
-	tkn, tokenValue, err := Issue(ctx, grant, c, &Options{
+	tkn, tokenValue, err := Issue(ctx, grant, c, &IssuanceOptions{
 		Scopes:      req.scopes,
 		AuthDetails: req.authDetails,
 		Resources:   req.resources,
@@ -66,6 +66,7 @@ func generateRefreshTokenGrant(ctx oidc.Context, req request) (response, error) 
 		TokenType:            tkn.Type,
 		Scopes:               tkn.Scopes,
 		AuthorizationDetails: tkn.AuthDetails,
+		Resources:            tkn.Resources,
 		RefreshToken:         refreshToken,
 	}
 
@@ -117,7 +118,7 @@ func validateRefreshTokenGrantRequest(ctx oidc.Context, req request, c *goidc.Cl
 		return err
 	}
 
-	if err := validateAuthDetails(ctx, grant.AuthDetails, req); err != nil {
+	if err := validateAuthDetails(ctx, req, c, grant.AuthDetails); err != nil {
 		return err
 	}
 
@@ -135,7 +136,7 @@ func validateRefreshTokenBinding(ctx oidc.Context, c *goidc.Client, cnf goidc.To
 	// If the refresh token was issued with DPoP, make sure the following token is bound with DPoP as well.
 	if cnf.JWKThumbprint != "" {
 		// Note that a DPoP JWT for a different key can be used to bind the token.
-		opts := bindindValidationsOptions{}
+		opts := bindindValidationOptions{}
 		opts.dpopIsRequired = true
 		if err := validateBindingDPoP(ctx, c, opts); err != nil {
 			return err
@@ -145,7 +146,7 @@ func validateRefreshTokenBinding(ctx oidc.Context, c *goidc.Client, cnf goidc.To
 	// If the refresh token was issued with TLS binding, make sure the following
 	// token is bound to the same tls certificate.
 	if cnf.ClientCertThumbprint != "" {
-		opts := bindindValidationsOptions{
+		opts := bindindValidationOptions{
 			tlsIsRequired:     true,
 			tlsCertThumbprint: cnf.ClientCertThumbprint,
 		}

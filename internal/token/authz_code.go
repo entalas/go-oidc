@@ -1,6 +1,7 @@
 package token
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -22,10 +23,12 @@ func generateAuthCodeGrant(ctx oidc.Context, req request) (response, error) {
 
 	as, err := ctx.AuthnSessionByAuthCode(req.code)
 	if err != nil {
-		// Invalidate any grant associated with the authorization code.
-		// This ensures that even if the code is compromised, the access token
-		// that it generated cannot be misused by a malicious client.
-		_ = ctx.DeleteGrantByAuthorizationCode(req.code)
+		if errors.Is(err, goidc.ErrNotFound) {
+			// Invalidate any grant associated with the authorization code.
+			// This ensures that even if the code is compromised, the access token
+			// that it generated cannot be misused by a malicious client.
+			_ = ctx.DeleteGrantByAuthorizationCode(req.code)
+		}
 		return response{}, goidc.WrapError(goidc.ErrorCodeInvalidGrant, "invalid authorization code", err)
 	}
 
@@ -55,7 +58,7 @@ func generateAuthCodeGrant(ctx oidc.Context, req request) (response, error) {
 		return response{}, err
 	}
 
-	tkn, tokenValue, err := Issue(ctx, grant, c, &Options{
+	tkn, tokenValue, err := Issue(ctx, grant, c, &IssuanceOptions{
 		Scopes:      req.scopes,
 		AuthDetails: req.authDetails,
 		Resources:   req.resources,
@@ -69,13 +72,9 @@ func generateAuthCodeGrant(ctx oidc.Context, req request) (response, error) {
 		ExpiresIn:            tkn.LifetimeSecs(),
 		TokenType:            tkn.Type,
 		RefreshToken:         grant.RefreshToken,
+		Scopes:               tkn.Scopes,
 		AuthorizationDetails: tkn.AuthDetails,
-	}
-	if tkn.Scopes != as.GrantedScopes {
-		tokenResp.Scopes = tkn.Scopes
-	}
-	if ctx.ResourceIndicatorsIsEnabled && !compareSlices(tkn.Resources, as.GrantedResources) {
-		tokenResp.Resources = tkn.Resources
+		Resources:            tkn.Resources,
 	}
 	if strutil.ContainsOpenID(tkn.Scopes) {
 		tokenResp.IDToken, err = MakeIDToken(ctx, c, IDTokenOptions{
@@ -104,7 +103,7 @@ func validateAuthCodeGrantRequest(ctx oidc.Context, req request, c *goidc.Client
 		return goidc.NewError(goidc.ErrorCodeInvalidGrant, "the authorization code is expired")
 	}
 
-	if err := ValidateBinding(ctx, c, &bindindValidationsOptions{
+	if err := ValidateBinding(ctx, c, &bindindValidationOptions{
 		tlsIsRequired:     as.ClientCertThumbprint != "",
 		tlsCertThumbprint: as.ClientCertThumbprint,
 		dpopIsRequired:    as.JWKThumbprint != "",
@@ -113,11 +112,11 @@ func validateAuthCodeGrantRequest(ctx oidc.Context, req request, c *goidc.Client
 		return err
 	}
 
-	if as.RedirectURI != req.redirectURI {
+	if req.redirectURI != as.RedirectURI {
 		return goidc.NewError(goidc.ErrorCodeInvalidGrant, "invalid redirect_uri")
 	}
 
-	if err := validatePkce(ctx, req, c, as); err != nil {
+	if err := validatePKCE(ctx, req, c, as); err != nil {
 		return err
 	}
 
@@ -125,7 +124,7 @@ func validateAuthCodeGrantRequest(ctx oidc.Context, req request, c *goidc.Client
 		return err
 	}
 
-	if err := validateAuthDetails(ctx, as.GrantedAuthDetails, req); err != nil {
+	if err := validateAuthDetails(ctx, req, c, as.GrantedAuthDetails); err != nil {
 		return err
 	}
 
@@ -134,11 +133,4 @@ func validateAuthCodeGrantRequest(ctx oidc.Context, req request, c *goidc.Client
 	}
 
 	return nil
-}
-
-func compareSlices(s1, s2 []string) bool {
-	c1, c2 := slices.Clone(s1), slices.Clone(s2)
-	slices.Sort(c1)
-	slices.Sort(c2)
-	return slices.Equal(c1, c2)
 }

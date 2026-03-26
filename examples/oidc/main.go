@@ -35,12 +35,10 @@ func main() {
 		provider.WithIssuerResponseParameter(),
 		provider.WithClaimsParameter(),
 		provider.WithPKCE(goidc.CodeChallengeMethodSHA256),
-		provider.WithImplicitGrant(),
-		provider.WithAuthorizationCodeGrant(),
-		provider.WithRefreshTokenGrant(),
+		provider.WithGrantTypes(goidc.GrantAuthorizationCode, goidc.GrantImplicit, goidc.GrantRefreshToken),
 		provider.WithClaims(authutil.Claims[0], authutil.Claims...),
 		provider.WithACRs(authutil.ACRs[0], authutil.ACRs...),
-		provider.WithDCR(authutil.DCRFunc, nil),
+		provider.WithDCR(authutil.DCRFunc),
 		provider.WithTokenOptions(authutil.TokenOptionsFunc(goidc.RS256)),
 		provider.WithIDTokenClaims(authutil.IDTokenClaimsFunc()),
 		provider.WithUserInfoClaims(authutil.UserInfoClaimsFunc()),
@@ -50,6 +48,7 @@ func main() {
 		provider.WithRenderErrorFunc(authutil.RenderError()),
 		provider.WithDisplayValues(authutil.DisplayValues[0], authutil.DisplayValues...),
 		provider.WithSubIdentifierTypes(goidc.SubIdentifierPublic, goidc.SubIdentifierPairwise),
+		provider.WithPairwiseSubjectFunc(authutil.PairwiseSubjectFunc()),
 		provider.WithLogout(authutil.HandleLogout(), authutil.LogoutPolicy()),
 	)
 	if err != nil {

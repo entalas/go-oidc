@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"log"
 	"net/http"
@@ -31,8 +32,7 @@ func main() {
 		provider.WithIssuerResponseParameter(),
 		provider.WithClaimsParameter(),
 		provider.WithPKCERequired(goidc.CodeChallengeMethodSHA256),
-		provider.WithAuthorizationCodeGrant(),
-		provider.WithRefreshTokenGrant(),
+		provider.WithGrantTypes(goidc.GrantAuthorizationCode, goidc.GrantRefreshToken),
 		provider.WithClaims(authutil.Claims[0], authutil.Claims...),
 		provider.WithACRs(authutil.ACRs[0], authutil.ACRs...),
 		provider.WithTokenOptions(authutil.TokenOptionsFunc(goidc.PS256)),
@@ -41,24 +41,24 @@ func main() {
 		provider.WithHTTPClientFunc(authutil.HTTPClient),
 		provider.WithPolicies(authutil.Policy()),
 		provider.WithNotifyErrorFunc(authutil.ErrorLoggingFunc),
-		provider.WithStaticClient(clientOne),
-		provider.WithStaticClient(clientTwo),
+		provider.WithStaticClients(clientOne, clientTwo),
 		provider.WithRenderErrorFunc(authutil.RenderError()),
 		provider.WithCheckJTIFunc(authutil.CheckJTIFunc()),
 		provider.WithJWTLeewayTime(30),
-		provider.WithRichAuthorization(func(grantedDetails, requestedDetails []goidc.AuthorizationDetail) error {
-			grantedDetailTypes := make([]goidc.AuthDetailType, len(grantedDetails))
-			for i, grantedDetail := range grantedDetails {
+		provider.WithRAR("customer_information"),
+		provider.WithRARCompareDetailsFunc(func(_ context.Context, granted, requested []goidc.AuthDetail) error {
+			grantedDetailTypes := make([]goidc.AuthDetailType, len(granted))
+			for i, grantedDetail := range granted {
 				grantedDetailTypes[i] = grantedDetail.Type()
 			}
 
-			for _, requestedDetail := range requestedDetails {
+			for _, requestedDetail := range requested {
 				if !slices.Contains(grantedDetailTypes, requestedDetail.Type()) {
 					return goidc.NewError(goidc.ErrorCodeInvalidAuthDetails, "authorization details do not match")
 				}
 			}
 			return nil
-		}, "customer_information"),
+		}),
 	)
 	if err != nil {
 		log.Fatal(err)

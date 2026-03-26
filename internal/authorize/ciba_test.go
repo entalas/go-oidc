@@ -16,7 +16,7 @@ import (
 func TestInitBackAuth_PingMode(t *testing.T) {
 	// Given.
 	ctx, client := setUpBackAuth(t)
-	client.CIBATokenDeliveryMode = goidc.CIBATokenDeliveryModePing
+	client.CIBATokenDeliveryMode = goidc.CIBADeliveryModePing
 
 	req := request{
 		ClientID: client.ID,
@@ -46,6 +46,7 @@ func TestInitBackAuth_PingMode(t *testing.T) {
 
 	wantedSession := goidc.AuthnSession{
 		ID:                 session.ID,
+		Status:             goidc.StatusInProgress,
 		CIBAAuthID:         session.CIBAAuthID,
 		ExpiresAtTimestamp: session.ExpiresAtTimestamp,
 		CreatedAtTimestamp: session.CreatedAtTimestamp,
@@ -72,7 +73,7 @@ func TestInitBackAuth_PingMode(t *testing.T) {
 func TestInitBackAuth_PollMode(t *testing.T) {
 	// Given.
 	ctx, client := setUpBackAuth(t)
-	client.CIBATokenDeliveryMode = goidc.CIBATokenDeliveryModePoll
+	client.CIBATokenDeliveryMode = goidc.CIBADeliveryModePoll
 
 	req := request{
 		ClientID: client.ID,
@@ -101,6 +102,7 @@ func TestInitBackAuth_PollMode(t *testing.T) {
 
 	wantedSession := goidc.AuthnSession{
 		ID:                 session.ID,
+		Status:             goidc.StatusInProgress,
 		CIBAAuthID:         session.CIBAAuthID,
 		ExpiresAtTimestamp: session.ExpiresAtTimestamp,
 		CreatedAtTimestamp: session.CreatedAtTimestamp,
@@ -126,7 +128,7 @@ func TestInitBackAuth_PollMode(t *testing.T) {
 func TestInitBackAuth_PushMode(t *testing.T) {
 	// Given.
 	ctx, client := setUpBackAuth(t)
-	client.CIBATokenDeliveryMode = goidc.CIBATokenDeliveryModePush
+	client.CIBATokenDeliveryMode = goidc.CIBADeliveryModePush
 
 	req := request{
 		ClientID: client.ID,
@@ -156,6 +158,7 @@ func TestInitBackAuth_PushMode(t *testing.T) {
 
 	wantedSession := goidc.AuthnSession{
 		ID:                 session.ID,
+		Status:             goidc.StatusInProgress,
 		CIBAAuthID:         session.CIBAAuthID,
 		ExpiresAtTimestamp: session.ExpiresAtTimestamp,
 		CreatedAtTimestamp: session.CreatedAtTimestamp,
@@ -227,6 +230,7 @@ func TestInitBackAuth_WithJAR(t *testing.T) {
 
 	wantedSession := goidc.AuthnSession{
 		ID:                 session.ID,
+		Status:             goidc.StatusInProgress,
 		CIBAAuthID:         resp.AuthReqID,
 		ExpiresAtTimestamp: session.ExpiresAtTimestamp,
 		CreatedAtTimestamp: session.CreatedAtTimestamp,
@@ -254,7 +258,7 @@ func TestInitBackAuth_WithJAR(t *testing.T) {
 func TestInitBackAuth_Rejected(t *testing.T) {
 	// Given.
 	ctx, client := setUpBackAuth(t)
-	ctx.InitBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
+	ctx.CIBAHandleSessionFunc = func(ctx context.Context, as *goidc.AuthnSession, c *goidc.Client) error {
 		return goidc.NewError(goidc.ErrorCodeInvalidRequest, "invalid request")
 	}
 
@@ -318,13 +322,10 @@ func setUpBackAuth(t *testing.T) (oidc.Context, *goidc.Client) {
 	ctx := oidctest.NewContext(t)
 	ctx.GrantTypes = append(ctx.GrantTypes, goidc.GrantCIBA)
 	ctx.CIBATokenDeliveryModels = []goidc.CIBATokenDeliveryMode{
-		goidc.CIBATokenDeliveryModePoll, goidc.CIBATokenDeliveryModePing,
-		goidc.CIBATokenDeliveryModePush,
+		goidc.CIBADeliveryModePoll, goidc.CIBADeliveryModePing,
+		goidc.CIBADeliveryModePush,
 	}
-	ctx.InitBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
-		return nil
-	}
-	ctx.ValidateBackAuthFunc = func(ctx context.Context, as *goidc.AuthnSession) error {
+	ctx.CIBAHandleSessionFunc = func(ctx context.Context, as *goidc.AuthnSession, c *goidc.Client) error {
 		return nil
 	}
 	ctx.CIBAUserCodeIsEnabled = true
@@ -333,7 +334,7 @@ func setUpBackAuth(t *testing.T) (oidc.Context, *goidc.Client) {
 
 	client, secret := oidctest.NewClient(t)
 	client.GrantTypes = append(client.GrantTypes, goidc.GrantCIBA)
-	client.CIBATokenDeliveryMode = goidc.CIBATokenDeliveryModePing
+	client.CIBATokenDeliveryMode = goidc.CIBADeliveryModePing
 	client.CIBANotificationEndpoint = "https://example.client.com/ciba"
 	if err := ctx.SaveClient(client); err != nil {
 		t.Fatalf("error setting up auth: %v", err)

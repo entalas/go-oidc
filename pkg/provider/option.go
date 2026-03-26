@@ -147,8 +147,7 @@ func WithTokenRevocationEndpoint(endpoint string) Option {
 	}
 }
 
-// WithCIBAEndpoint overrides the default value for the CIBA endpoint which is
-// [defaultEndpointCIBA].
+// WithCIBAEndpoint overrides the default value for the CIBA endpoint which is [defaultEndpointCIBA].
 func WithCIBAEndpoint(endpoint string) Option {
 	return func(p *Provider) error {
 		p.config.CIBAEndpoint = endpoint
@@ -246,14 +245,11 @@ func WithIDTokenLifetime(secs int) Option {
 // [WithIDTokenContentEncryptionAlgs].
 // Clients can choose the encryption algorithms for ID tokens by informing the
 // attributes "id_token_encrypted_response_alg" and "id_token_encrypted_response_enc".
-func WithIDTokenEncryption(
-	keyEncAlg goidc.KeyEncryptionAlgorithm,
-	keyEncAlgs ...goidc.KeyEncryptionAlgorithm,
-) Option {
-	keyEncAlgs = appendIfNotIn(keyEncAlgs, keyEncAlg)
+func WithIDTokenEncryption(alg goidc.KeyEncryptionAlgorithm, algs ...goidc.KeyEncryptionAlgorithm) Option {
+	algs = appendIfNotIn(algs, alg)
 	return func(p *Provider) error {
 		p.config.IDTokenEncIsEnabled = true
-		p.config.IDTokenKeyEncAlgs = keyEncAlgs
+		p.config.IDTokenKeyEncAlgs = algs
 		return nil
 	}
 }
@@ -261,10 +257,7 @@ func WithIDTokenEncryption(
 // WithIDTokenContentEncryptionAlgs overrides the default content encryption
 // algorithm which is A128CBC-HS256.
 // To enabled encryption of ID tokens, see [WithIDTokenEncryption].
-func WithIDTokenContentEncryptionAlgs(
-	defaultAlg goidc.ContentEncryptionAlgorithm,
-	algs ...goidc.ContentEncryptionAlgorithm,
-) Option {
+func WithIDTokenContentEncryptionAlgs(defaultAlg goidc.ContentEncryptionAlgorithm, algs ...goidc.ContentEncryptionAlgorithm) Option {
 	algs = appendIfNotIn(algs, defaultAlg)
 	return func(p *Provider) error {
 		p.config.IDTokenDefaultContentEncAlg = defaultAlg
@@ -277,13 +270,18 @@ func WithIDTokenContentEncryptionAlgs(
 // handleFunc is executed during registration and update of the client to
 // perform custom validations (e.g. validate the initial access token) or set
 // default values (e.g. set the default scopes).
-// validateTokenFunc validates the initial access token if not nil.
 // To make registration access tokens rotate, see [WithDCRTokenRotation].
-func WithDCR(handleFunc goidc.HandleDynamicClientFunc, validateTokenFunc goidc.ValidateInitialAccessTokenFunc) Option {
+func WithDCR(handleFunc goidc.HandleDynamicClientFunc) Option {
 	return func(p *Provider) error {
 		p.config.DCRIsEnabled = true
 		p.config.HandleDynamicClientFunc = handleFunc
-		p.config.ValidateInitialAccessTokenFunc = validateTokenFunc
+		return nil
+	}
+}
+
+func WithDCRInitialTokenFunc(f goidc.ValidateInitialAccessTokenFunc) Option {
+	return func(p *Provider) error {
+		p.config.ValidateInitialAccessTokenFunc = f
 		return nil
 	}
 }
@@ -305,22 +303,6 @@ func WithDCRTokenRotation() Option {
 	}
 }
 
-// WithClientCredentialsGrant makes available the client credentials grant.
-func WithClientCredentialsGrant() Option {
-	return func(p *Provider) error {
-		p.config.GrantTypes = append(p.config.GrantTypes, goidc.GrantClientCredentials)
-		return nil
-	}
-}
-
-// WithRefreshTokenGrant makes available the refresh token grant.
-func WithRefreshTokenGrant() Option {
-	return func(p *Provider) error {
-		p.config.GrantTypes = append(p.config.GrantTypes, goidc.GrantRefreshToken)
-		return nil
-	}
-}
-
 func WithRefreshTokenShouldIssueFunc(f goidc.ShouldIssueRefreshTokenFunc) Option {
 	return func(p *Provider) error {
 		p.config.ShouldIssueRefreshTokenFunc = f
@@ -337,7 +319,7 @@ func WithRefreshTokenLifetime(lifetimeSecs int) Option {
 
 // WithRefreshTokenRotation causes a new refresh token to be issued each time
 // one is used. The one used during the request then becomes invalid.
-// To enable the refresh token grant, see [WithRefreshTokenGrant].
+// To enable the refresh token grant, see [WithGrantTypes].
 func WithRefreshTokenRotation() Option {
 	return func(p *Provider) error {
 		p.config.RefreshTokenRotationIsEnabled = true
@@ -345,11 +327,16 @@ func WithRefreshTokenRotation() Option {
 	}
 }
 
-func WithCIBAGrant(initFunc goidc.InitBackAuthFunc, validateFunc goidc.ValidateBackAuthFunc) Option {
+func WithCIBAProfile(p goidc.CIBAProfile) Option {
+	return func(op *Provider) error {
+		op.config.CIBAProfile = p
+		return nil
+	}
+}
+
+func WithCIBAHandleSessionFunc(f goidc.HandleSessionFunc) Option {
 	return func(p *Provider) error {
-		p.config.GrantTypes = append(p.config.GrantTypes, goidc.GrantCIBA)
-		p.config.InitBackAuthFunc = initFunc
-		p.config.ValidateBackAuthFunc = validateFunc
+		p.config.CIBAHandleSessionFunc = f
 		return nil
 	}
 }
@@ -467,20 +454,10 @@ func WithTokenClaims(f goidc.TokenClaimsFunc) Option {
 	}
 }
 
-// WithAuthorizationCodeGrant allows the authorization_code grant type and the
-// associated response types.
-func WithAuthorizationCodeGrant() Option {
+func WithGrantTypes(grant goidc.GrantType, grants ...goidc.GrantType) Option {
+	grants = appendIfNotIn(grants, grant)
 	return func(p *Provider) error {
-		p.config.GrantTypes = append(p.config.GrantTypes, goidc.GrantAuthorizationCode)
-		return nil
-	}
-}
-
-// WithImplicitGrant allows the implicit grant type and the associated
-// response types.
-func WithImplicitGrant() Option {
-	return func(p *Provider) error {
-		p.config.GrantTypes = append(p.config.GrantTypes, goidc.GrantImplicit)
+		p.config.GrantTypes = grants
 		return nil
 	}
 }
@@ -540,7 +517,7 @@ func WithPARRequired() Option {
 // To enable pushed authorization request, see [WithPAR].
 func WithPARUnregisteredRedirectURIs() Option {
 	return func(p *Provider) error {
-		p.config.PARAllowUnregisteredRedirectURI = true
+		p.config.PARUnregisteredRedirectURIIsEnabled = true
 		return nil
 	}
 }
@@ -626,8 +603,7 @@ func WithJARM(defaultAlg goidc.SignatureAlgorithm, algs ...goidc.SignatureAlgori
 	}
 }
 
-// WithJARM allows responses for authorization requests to be sent as encrypted
-// JWTs.
+// WithJARM allows responses for authorization requests to be sent as encrypted JWTs.
 // The default content encryption algorithm is A128CBC-HS256.
 // Clients can choose the encryption algorithms by setting the attributes
 // "authorization_encrypted_response_al" and "authorization_encrypted_response_enc".
@@ -731,44 +707,60 @@ func WithClaimsParameter() Option {
 	}
 }
 
-// WithRichAuthorization allows clients to make rich authorization requests.
-func WithRichAuthorization(compareFunc goidc.CompareAuthDetailsFunc, typ goidc.AuthDetailType, types ...goidc.AuthDetailType) Option {
+// WithRAR enables Rich Authorization Requests (RFC 9396).
+func WithRAR(typ goidc.AuthDetailType, types ...goidc.AuthDetailType) Option {
 	types = appendIfNotIn(types, typ)
 	return func(p *Provider) error {
-		p.config.RichAuthorizationIsEnabled = true
-		p.config.CompareAuthDetailsFunc = compareFunc
-		p.config.AuthDetailTypes = types
+		p.config.RARIsEnabled = true
+		p.config.RARDetailTypes = types
+		return nil
+	}
+}
+
+func WithRARValidateDetailFunc(f goidc.RARValidateDetailFunc) Option {
+	return func(p *Provider) error {
+		p.config.RARValidateDetailFunc = f
+		return nil
+	}
+}
+
+// WithRARCompareDetailsFunc sets the function used to validate that the
+// authorization details requested during authorization_code or refresh_token
+// grants are consistent with the originally granted ones.
+func WithRARCompareDetailsFunc(f goidc.RARCompareDetailsFunc) Option {
+	return func(p *Provider) error {
+		p.config.RARCompareDetailsFunc = f
 		return nil
 	}
 }
 
 // WithMTLS allows requests to be established with mutual TLS.
-func WithMTLS(host string, clientCertFunc goidc.ClientCertFunc) Option {
+func WithMTLS(host string, f goidc.ClientCertFunc) Option {
 	return func(p *Provider) error {
 		p.config.MTLSIsEnabled = true
 		p.config.MTLSHost = host
-		p.config.ClientCertFunc = clientCertFunc
+		p.config.ClientCertFunc = f
 		return nil
 	}
 }
 
-// WithTLSCertTokenBinding makes requests to /token return tokens bound to the
+// WithTLSTokenBinding makes requests to /token return tokens bound to the
 // client certificate if any is sent.
 // To enable MTLS, see [WithMTLS].
-func WithTLSCertTokenBinding() Option {
+func WithTLSTokenBinding() Option {
 	return func(p *Provider) error {
 		p.config.MTLSTokenBindingIsEnabled = true
 		return nil
 	}
 }
 
-// WithTLSCertTokenBindingRequired makes requests to /token return tokens bound to the
+// WithTLSTokenBindingRequired makes requests to /token return tokens bound to the
 // client certificate.
-// For more info, see [WithTLSCertTokenBinding].
-func WithTLSCertTokenBindingRequired() Option {
+// For more info, see [WithTLSTokenBinding].
+func WithTLSTokenBindingRequired() Option {
 	return func(p *Provider) error {
 		p.config.MTLSTokenBindingIsRequired = true
-		return WithTLSCertTokenBinding()(p)
+		return WithTLSTokenBinding()(p)
 	}
 }
 
@@ -798,7 +790,7 @@ func WithDPoPRequired(alg goidc.SignatureAlgorithm, algs ...goidc.SignatureAlgor
 
 // WithTokenBindingRequired makes at least one sender constraining mechanism
 // (TLS or DPoP) be required in order to issue an access token to a client.
-// For more info, see [WithTLSCertTokenBinding] and [WithDPoP].
+// For more info, see [WithTLSTokenBinding] and [WithDPoP].
 func WithTokenBindingRequired() Option {
 	return func(p *Provider) error {
 		p.config.TokenBindingIsRequired = true
@@ -901,12 +893,13 @@ func WithAuthnSessionIDFunc(f goidc.RandomStringFunc) Option {
 	}
 }
 
-// WithStaticClient adds a static client to the provider.
+// WithStaticClients adds static clients to the provider.
 // The static clients are kept in memory only and are checked before consulting
 // the client manager.
-func WithStaticClient(client *goidc.Client) Option {
+func WithStaticClients(c *goidc.Client, cs ...*goidc.Client) Option {
+	cs = appendIfNotIn(cs, c)
 	return func(p *Provider) error {
-		p.config.StaticClients = append(p.config.StaticClients, client)
+		p.config.StaticClients = cs
 		return nil
 	}
 }
@@ -981,11 +974,10 @@ func WithHTTPClientFunc(f goidc.HTTPClientFunc) Option {
 	}
 }
 
-// WithJWTBearerGrant enables the JWT bearer grant type.
-func WithJWTBearerGrant(f goidc.HandleJWTBearerGrantAssertionFunc) Option {
+// WithJWTBearerHandleAssertionFunc sets the function to handle JWT bearer grant assertions.
+func WithJWTBearerHandleAssertionFunc(f goidc.JWTBearerHandleAssertionFunc) Option {
 	return func(p *Provider) error {
-		p.config.GrantTypes = append(p.config.GrantTypes, goidc.GrantJWTBearer)
-		p.config.HandleJWTBearerGrantAssertionFunc = f
+		p.config.JWTBearerHandleAssertionFunc = f
 		return nil
 	}
 }
@@ -994,7 +986,7 @@ func WithJWTBearerGrant(f goidc.HandleJWTBearerGrantAssertionFunc) Option {
 // for the jwt bearer grant type.
 func WithJWTBearerGrantClientAuthnRequired() Option {
 	return func(p *Provider) error {
-		p.config.JWTBearerGrantClientAuthnIsRequired = true
+		p.config.JWTBearerClientAuthnIsRequired = true
 		return nil
 	}
 }
@@ -1003,21 +995,21 @@ func WithJWTBearerGrantClientAuthnRequired() Option {
 //
 // If [goidc.SubIdentifierPairwise] is informed, the default behavior for
 // generating pairwise subjects is to keep the value as is.
-// This can be overridden with [WithGeneratePairwiseSubIDFunc].
+// This can be overridden with [WithPairwiseSubjectFunc].
 // Also, only opaque tokens are issued when pairwise IDs are applied to avoid
 // information leakage since the sub value is part of the token payload.
-func WithSubIdentifierTypes(defaultIDType goidc.SubIdentifierType, idTypes ...goidc.SubIdentifierType) Option {
-	idTypes = appendIfNotIn(idTypes, defaultIDType)
+func WithSubIdentifierTypes(defaultType goidc.SubIdentifierType, types ...goidc.SubIdentifierType) Option {
+	types = appendIfNotIn(types, defaultType)
 	return func(p *Provider) error {
-		p.config.DefaultSubIdentifierType = defaultIDType
-		p.config.SubIdentifierTypes = idTypes
+		p.config.DefaultSubIdentifierType = defaultType
+		p.config.SubIdentifierTypes = types
 		return nil
 	}
 }
 
-func WithGeneratePairwiseSubIDFunc(f goidc.GeneratePairwiseSubIDFunc) Option {
+func WithPairwiseSubjectFunc(f goidc.PairwiseSubjectFunc) Option {
 	return func(p *Provider) error {
-		p.config.GeneratePairwiseSubIDFunc = f
+		p.config.PairwiseSubjectFunc = f
 		return nil
 	}
 }
@@ -1205,19 +1197,15 @@ func WithOpenIDFedHandleClientFunc(f goidc.HandleClientFunc) Option {
 	}
 }
 
-// WithOpenIDFedTrustMark configures a trust mark that the provider will fetch and include
+// WithOpenIDFedTrustMark configures trust marks that the provider will fetch and include
 // in its entity configuration. Trust marks are credentials issued by accreditation
 // authorities that attest to certain properties of the provider.
 //
 // Parameters:
-//   - markType: The trust mark identifier (e.g., "https://example.com/trust_marks/certified").
-//   - issuer: The entity identifier of the trust mark issuer.
-func WithOpenIDFedTrustMark(markType goidc.TrustMark, issuer string) Option {
+//   - marks: A map of trust mark identifiers (e.g., "https://example.com/trust_marks/certified") to issuers.
+func WithOpenIDFedTrustMark(marks map[goidc.TrustMark]string) Option {
 	return func(p *Provider) error {
-		if p.config.OpenIDFedTrustMarks == nil {
-			p.config.OpenIDFedTrustMarks = make(map[goidc.TrustMark]string)
-		}
-		p.config.OpenIDFedTrustMarks[markType] = issuer
+		p.config.OpenIDFedTrustMarks = marks
 		return nil
 	}
 }
