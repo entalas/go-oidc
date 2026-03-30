@@ -558,6 +558,30 @@ func TestWithDCRTokenRotation(t *testing.T) {
 	}
 }
 
+func TestWithDCRAllowLocalhostRedirectURIs(t *testing.T) {
+	// Given.
+	p := &Provider{
+		config: oidc.Configuration{},
+	}
+
+	// When.
+	err := WithDCRAllowLocalhostRedirectURIs()(p)
+
+	// Then.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := &Provider{
+		config: oidc.Configuration{
+			DCRAllowLocalhostRedirectURIs: true,
+		},
+	}
+	if diff := cmp.Diff(p, want, cmp.AllowUnexported(Provider{})); diff != "" {
+		t.Error(diff)
+	}
+}
+
 func TestWithClientIDFunc(t *testing.T) {
 	// Given.
 	op := &Provider{

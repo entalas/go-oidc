@@ -869,6 +869,48 @@ func TestValidateRequest_RFC8252_NativeAppLoopbackIPv6(t *testing.T) {
 	}
 }
 
+func TestValidateRequest_RFC8252_NativeAppLocalhost_NotAllowed(t *testing.T) {
+	// Given.
+	ctx := oidctest.NewContext(t)
+	client, _ := oidctest.NewClient(t)
+	client.ApplicationType = goidc.ApplicationTypeNative
+	client.RedirectURIs = []string{"http://localhost:6274/callback"}
+
+	// When.
+	err := dcr.Validate(ctx, &client.ClientMeta)
+
+	// Then.
+	if err == nil {
+		t.Fatalf("expected error but got none")
+	}
+
+	var oidcErr goidc.Error
+	if !errors.As(err, &oidcErr) {
+		t.Fatalf("invalid error type")
+	}
+
+	if oidcErr.Code != goidc.ErrorCodeInvalidClientMetadata {
+		t.Errorf("Code = %s, want %s", oidcErr.Code, goidc.ErrorCodeInvalidClientMetadata)
+	}
+}
+
+func TestValidateRequest_RFC8252_NativeAppLocalhost_Allowed(t *testing.T) {
+	// Given.
+	ctx := oidctest.NewContext(t)
+	ctx.DCRAllowLocalhostRedirectURIs = true
+	client, _ := oidctest.NewClient(t)
+	client.ApplicationType = goidc.ApplicationTypeNative
+	client.RedirectURIs = []string{"http://localhost:6274/callback"}
+
+	// When.
+	err := dcr.Validate(ctx, &client.ClientMeta)
+
+	// Then.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateRequest_RFC8252_NativeAppPrivateUseURIScheme(t *testing.T) {
 	// Given.
 	ctx := oidctest.NewContext(t)

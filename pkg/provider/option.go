@@ -289,6 +289,13 @@ func WithDCRValidateInitialTokenFunc(f goidc.DCRValidateInitialTokenFunc) Option
 	}
 }
 
+func WithDCRAllowLocalhostRedirectURIs() Option {
+	return func(p *Provider) error {
+		p.config.DCRAllowLocalhostRedirectURIs = true
+		return nil
+	}
+}
+
 func WithClientIDFunc(f goidc.ClientIDFunc) Option {
 	return func(p *Provider) error {
 		p.config.ClientIDFunc = f

@@ -95,7 +95,9 @@ func validateRedirectURIS(ctx oidc.Context, meta *goidc.ClientMeta) error {
 			// RFC 8252: Native apps can use http loopback or private-use URI schemes.
 			switch parsedURI.Scheme {
 			case "http": // Loopback interface redirection.
-				if !strings.HasPrefix(parsedURI.Host, "127.") && parsedURI.Hostname() != "::1" {
+				if ctx.DCRAllowLocalhostRedirectURIs && parsedURI.Hostname() == "localhost" {
+					continue
+				} else if !strings.HasPrefix(parsedURI.Host, "127.") && parsedURI.Hostname() != "::1" {
 					return goidc.NewError(goidc.ErrorCodeInvalidClientMetadata, "http redirect uris for native apps must use loopback addresses")
 				}
 			case "https": // Claimed HTTPS URI Redirection.
