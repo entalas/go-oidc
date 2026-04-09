@@ -45,10 +45,10 @@ func introspect(ctx oidc.Context, req queryRequest) (goidc.TokenInfo, error) {
 	// field is_active as false.
 	tokenInfo, err := IntrospectionInfo(ctx, req.token)
 	if err != nil {
-		ctx.NotifyError(err)
+		return goidc.TokenInfo{}, err
 	}
 
-	if !ctx.IsClientAllowedTokenIntrospection(c, tokenInfo) {
+	if tokenInfo.IsActive && !ctx.IsClientAllowedTokenIntrospection(c, tokenInfo) {
 		return goidc.TokenInfo{}, goidc.NewError(goidc.ErrorCodeAccessDenied, "client not allowed to introspect the token")
 	}
 
@@ -83,11 +83,14 @@ func refreshTokenInfo(ctx oidc.Context, tkn string) (goidc.TokenInfo, error) {
 	return goidc.TokenInfo{
 		GrantID:              grant.ID,
 		IsActive:             true,
+		Issuer:               ctx.Issuer(),
 		Subject:              grant.Subject,
-		Type:                 goidc.TokenHintRefresh,
+		Type:                 goidc.TokenTypeBearer,
 		Scopes:               grant.Scopes,
 		AuthorizationDetails: grant.AuthDetails,
 		ClientID:             grant.ClientID,
+		IssuedAtTimestamp:    grant.CreatedAtTimestamp,
+		NotBeforeTimestamp:   grant.CreatedAtTimestamp,
 		ExpiresAtTimestamp:   grant.ExpiresAtTimestamp,
 		Confirmation:         cnf,
 		ResourceAudiences:    grant.Resources,
@@ -120,11 +123,14 @@ func accessTokenInfo(ctx oidc.Context, accessToken string) (goidc.TokenInfo, err
 	return goidc.TokenInfo{
 		GrantID:              token.GrantID,
 		IsActive:             true,
+		Issuer:               ctx.Issuer(),
 		Subject:              token.Subject,
-		Type:                 goidc.TokenHintAccess,
+		Type:                 token.Type,
 		Scopes:               token.Scopes,
 		AuthorizationDetails: token.AuthDetails,
 		ClientID:             token.ClientID,
+		IssuedAtTimestamp:    token.CreatedAtTimestamp,
+		NotBeforeTimestamp:   token.CreatedAtTimestamp,
 		ExpiresAtTimestamp:   token.ExpiresAtTimestamp,
 		Confirmation:         cnf,
 		ResourceAudiences:    token.Resources,

@@ -2,6 +2,7 @@ package token
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -23,8 +24,10 @@ func TestIntrospect_OpaqueToken(t *testing.T) {
 		ID:                 accessToken,
 		GrantID:            "random_grant_id",
 		ClientID:           client.ID,
+		CreatedAtTimestamp: now,
 		ExpiresAtTimestamp: now + 60,
 		Scopes:             goidc.ScopeOpenID.ID,
+		Type:               goidc.TokenTypeBearer,
 	}
 	_ = ctx.SaveToken(tokenEntity)
 
@@ -43,6 +46,15 @@ func TestIntrospect_OpaqueToken(t *testing.T) {
 	if tokenInfo.ExpiresAtTimestamp-(now+60) > 1 {
 		t.Errorf("ExpiresAtTimestamp = %d, want %d", tokenInfo.ExpiresAtTimestamp, now+60)
 	}
+	if tokenInfo.IssuedAtTimestamp == 0 {
+		t.Error("IssuedAtTimestamp must be set for active tokens")
+	}
+	if tokenInfo.NotBeforeTimestamp == 0 {
+		t.Error("NotBeforeTimestamp must be set for active tokens")
+	}
+	if tokenInfo.Issuer == "" {
+		t.Error("Issuer must be set for active tokens")
+	}
 
 	want := goidc.TokenInfo{
 		GrantID:            "random_grant_id",
@@ -50,7 +62,10 @@ func TestIntrospect_OpaqueToken(t *testing.T) {
 		ClientID:           client.ID,
 		Scopes:             goidc.ScopeOpenID.ID,
 		ExpiresAtTimestamp: tokenInfo.ExpiresAtTimestamp,
-		Type:               goidc.TokenHintAccess,
+		Type:               goidc.TokenTypeBearer,
+		Issuer:             "https://example.com",
+		IssuedAtTimestamp:  tokenInfo.IssuedAtTimestamp,
+		NotBeforeTimestamp: tokenInfo.NotBeforeTimestamp,
 	}
 	if diff := cmp.Diff(tokenInfo, want); diff != "" {
 		t.Error(diff)
@@ -87,13 +102,25 @@ func TestIntrospect_RefreshToken(t *testing.T) {
 	if tokenInfo.ExpiresAtTimestamp-(now+60) > 1 {
 		t.Errorf("ExpiresAtTimestamp = %d, want %d", tokenInfo.ExpiresAtTimestamp, now+60)
 	}
+	if tokenInfo.IssuedAtTimestamp == 0 {
+		t.Error("IssuedAtTimestamp must be set for active tokens")
+	}
+	if tokenInfo.NotBeforeTimestamp == 0 {
+		t.Error("NotBeforeTimestamp must be set for active tokens")
+	}
+	if tokenInfo.Issuer == "" {
+		t.Error("Issuer must be set for active tokens")
+	}
 
 	want := goidc.TokenInfo{
 		IsActive:           true,
 		ClientID:           client.ID,
 		Scopes:             goidc.ScopeOpenID.ID,
 		ExpiresAtTimestamp: tokenInfo.ExpiresAtTimestamp,
-		Type:               goidc.TokenHintRefresh,
+		Type:               goidc.TokenTypeBearer,
+		Issuer:             "https://example.com",
+		IssuedAtTimestamp:  tokenInfo.IssuedAtTimestamp,
+		NotBeforeTimestamp: tokenInfo.NotBeforeTimestamp,
 	}
 	if diff := cmp.Diff(tokenInfo, want); diff != "" {
 		t.Error(diff)
@@ -372,6 +399,72 @@ func TestIntrospect_TokenNotFound(t *testing.T) {
 
 	if tokenInfo.IsActive {
 		t.Error("nonexistent token should not be active")
+	}
+}
+
+func TestIntrospect_DPoPToken(t *testing.T) {
+	// Given.
+	ctx, client := setUpIntrospection(t)
+
+	accessToken := "dpop_token"
+	now := timeutil.TimestampNow()
+	tokenEntity := &goidc.Token{
+		ID:                 accessToken,
+		GrantID:            "dpop_grant_id",
+		ClientID:           client.ID,
+		ExpiresAtTimestamp: now + 60,
+		Scopes:             goidc.ScopeOpenID.ID,
+		Type:               goidc.TokenTypeDPoP,
+	}
+	_ = ctx.SaveToken(tokenEntity)
+
+	tokenReq := queryRequest{token: accessToken}
+
+	// When.
+	tokenInfo, err := introspect(ctx, tokenReq)
+
+	// Then.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tokenInfo.Type != goidc.TokenTypeDPoP {
+		t.Errorf("Type = %s, want %s", tokenInfo.Type, goidc.TokenTypeDPoP)
+	}
+}
+
+func TestIntrospect_ClientNotAllowed_UnknownToken(t *testing.T) {
+	// Given.
+	ctx, _ := setUpIntrospection(t)
+	ctx.IsClientAllowedTokenIntrospectionFunc = func(_ context.Context, _ *goidc.Client, _ goidc.TokenInfo) bool {
+		return false
+	}
+
+	tokenReq := queryRequest{token: "nonexistent_token"}
+
+	// When.
+	tokenInfo, err := introspect(ctx, tokenReq)
+
+	// Then: unknown token → 200 {active:false}, NOT an access_denied error.
+	if err != nil {
+		t.Fatalf("expected no error for unknown token with restrictive client, got: %v", err)
+	}
+	if tokenInfo.IsActive {
+		t.Error("unknown token must not be active")
+	}
+}
+
+func TestIntrospect_InactiveTokenJSON(t *testing.T) {
+	// Verify RFC 7662 §2.2: inactive token response MUST NOT include other
+	// fields. We marshal TokenInfo{IsActive:false} and check the JSON.
+	info := goidc.TokenInfo{IsActive: false}
+	b, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	got := string(b)
+	want := `{"active":false}`
+	if got != want {
+		t.Errorf("inactive TokenInfo JSON = %s, want %s", got, want)
 	}
 }
 
