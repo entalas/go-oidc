@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/luikyv/go-oidc/internal/dcr"
+	"github.com/luikyv/go-oidc/internal/client"
 	"github.com/luikyv/go-oidc/internal/discovery"
 	"github.com/luikyv/go-oidc/internal/oidc"
 	"github.com/luikyv/go-oidc/internal/timeutil"
@@ -76,14 +76,19 @@ func resolveClient(ctx oidc.Context, chain trustChain) (*goidc.Client, error) {
 	}
 
 	c := &goidc.Client{
-		ID:                    config.Subject,
-		FederationTrustAnchor: config.TrustAnchor,
-		CreatedAtTimestamp:    timeutil.TimestampNow(),
-		ExpiresAtTimestamp:    config.ExpiresAt,
-		ClientMeta:            *config.Metadata.OpenIDClient,
+		ID:                 config.Subject,
+		CreatedAtTimestamp: timeutil.TimestampNow(),
+		ExpiresAtTimestamp: config.ExpiresAt,
+		ClientMeta:         *config.Metadata.OpenIDClient,
+		Federation: &struct {
+			TrustAnchor string   `json:"trust_anchor"`
+			TrustMarks  []string `json:"trust_marks,omitempty"`
+		}{
+			TrustAnchor: config.TrustAnchor,
+		},
 	}
 
-	c.FederationTrustMarks, err = extractRequiredTrustMarks(ctx, config, c)
+	c.Federation.TrustMarks, err = extractRequiredTrustMarks(ctx, config, c)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +97,7 @@ func resolveClient(ctx oidc.Context, chain trustChain) (*goidc.Client, error) {
 		return nil, err
 	}
 
-	if err := dcr.Validate(ctx, config.Metadata.OpenIDClient); err != nil {
+	if err := client.Validate(ctx, config.Metadata.OpenIDClient); err != nil {
 		return nil, goidc.WrapError(goidc.ErrorCodeInvalidRequest, "invalid client metadata", err)
 	}
 

@@ -32,10 +32,11 @@ func RegisterHandlers(router *http.ServeMux, config *oidc.Configuration, middlew
 		goidc.ApplyMiddlewares(oidc.Handler(config, handlerCallback), middlewares...))
 	router.Handle("GET "+config.EndpointPrefix+config.AuthorizationEndpoint+"/{callback}/{callback_path...}",
 		goidc.ApplyMiddlewares(oidc.Handler(config, handlerCallback), middlewares...))
+
 }
 
 func handlerPush(ctx oidc.Context) {
-	if contentType := ctx.Request.Header.Get("Content-Type"); contentType != "" && contentType != "application/x-www-form-urlencoded" {
+	if mediaType := ctx.MediaType(); mediaType != "" && mediaType != "application/x-www-form-urlencoded" {
 		ctx.WriteError(goidc.NewError(goidc.ErrorCodeInvalidRequest, "invalid content type").WithStatusCode(http.StatusUnsupportedMediaType))
 		return
 	}
@@ -55,7 +56,7 @@ func handlerPush(ctx oidc.Context) {
 func handler(ctx oidc.Context) {
 	var req request
 	if ctx.Request.Method == http.MethodPost {
-		if contentType := ctx.Request.Header.Get("Content-Type"); contentType != "" && contentType != "application/x-www-form-urlencoded" {
+		if mediaType := ctx.MediaType(); mediaType != "" && mediaType != "application/x-www-form-urlencoded" {
 			ctx.WriteError(goidc.NewError(goidc.ErrorCodeInvalidRequest, "invalid content type").WithStatusCode(http.StatusUnsupportedMediaType))
 			return
 		}
@@ -88,7 +89,7 @@ func handlerCallback(ctx oidc.Context) {
 }
 
 func handlerCIBA(ctx oidc.Context) {
-	if contentType := ctx.Request.Header.Get("Content-Type"); contentType != "" && contentType != "application/x-www-form-urlencoded" {
+	if mediaType := ctx.MediaType(); mediaType != "" && mediaType != "application/x-www-form-urlencoded" {
 		ctx.WriteError(goidc.NewError(goidc.ErrorCodeInvalidRequest, "invalid content type").WithStatusCode(http.StatusUnsupportedMediaType))
 		return
 	}

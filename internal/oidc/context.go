@@ -47,6 +47,15 @@ func Handler(config *Configuration, exec func(ctx Context)) http.HandlerFunc {
 	}
 }
 
+func (ctx Context) Scope(s string) (goidc.Scope, bool) {
+	for _, scope := range ctx.Scopes {
+		if scope.Matches(s) {
+			return scope, true
+		}
+	}
+	return goidc.Scope{}, false
+}
+
 func (ctx Context) TokenAuthnSigAlgs() []goidc.SignatureAlgorithm {
 	return ctx.clientAuthnSigAlgs(ctx.TokenAuthnMethods)
 }
@@ -238,6 +247,10 @@ func (ctx Context) OpenIDFedRequiredTrustMarks(client *goidc.Client) []goidc.Tru
 	}
 
 	return ctx.OpenIDFedRequiredTrustMarksFunc(ctx, client)
+}
+
+func (ctx Context) OpenIDFedEntityJWKS(id string) (goidc.JSONWebKeySet, error) {
+	return ctx.OpenIDFedEntityJWKSFunc(ctx, id)
 }
 
 func (ctx Context) OpenIDFedHandleClient(client *goidc.Client) error {
@@ -549,7 +562,7 @@ func (ctx Context) WriteError(err error) {
 }
 
 func (ctx Context) Redirect(redirectURL string) {
-	http.Redirect(ctx.Response, ctx.Request, redirectURL, http.StatusSeeOther)
+	http.Redirect(ctx.Response, ctx.Request, redirectURL, http.StatusSeeOther) // TODO: 303 or 302?
 }
 
 func (ctx Context) WriteHTML(html string, params any) error {
@@ -564,6 +577,11 @@ func (ctx Context) WriteHTML(html string, params any) error {
 	ctx.Response.WriteHeader(http.StatusOK)
 	tmpl, _ := template.New("default").Parse(html)
 	return tmpl.Execute(ctx.Response, params)
+}
+
+func (ctx Context) MediaType() string {
+	ct := ctx.Request.Header.Get("Content-Type")
+	return strings.ToLower(strings.TrimSpace(strings.Split(ct, ";")[0]))
 }
 
 func (ctx Context) ShouldIssueRefreshToken(c *goidc.Client, grant *goidc.Grant) bool {
@@ -589,6 +607,14 @@ func (ctx Context) HandleGrant(grant *goidc.Grant) error {
 	return ctx.HandleGrantFunc(ctx, grant)
 }
 
+func (ctx Context) HandleToken(tkn *goidc.Token, grant *goidc.Grant) error {
+	if ctx.HandleTokenFunc == nil {
+		return nil
+	}
+
+	return ctx.HandleTokenFunc(ctx, tkn, grant)
+}
+
 func (ctx Context) GrantByID(id string) (*goidc.Grant, error) {
 	return ctx.GrantManager.Grant(ctx, id)
 }
@@ -607,11 +633,11 @@ func (ctx Context) UserInfoClaims(grant *goidc.Grant) map[string]any {
 	return ctx.UserInfoClaimsFunc(ctx, grant)
 }
 
-func (ctx Context) TokenClaims(grant *goidc.Grant) map[string]any {
+func (ctx Context) TokenClaims(tkn *goidc.Token, grant *goidc.Grant) map[string]any {
 	if ctx.TokenClaimsFunc == nil {
 		return nil
 	}
-	return ctx.TokenClaimsFunc(ctx, grant)
+	return ctx.TokenClaimsFunc(ctx, tkn, grant)
 }
 
 func (ctx Context) JWTBearerHandleAssertion(assertion string) (string, error) {
@@ -823,6 +849,52 @@ func (ctx Context) SSFHandleExpiredEventStream(stream *goidc.SSFEventStream) err
 	}
 
 	return ctx.SSFHandleExpiredEventStreamFunc(ctx, stream)
+}
+
+func (ctx Context) VCHandlePreAuthCode(preAuthCode string, opts goidc.VCPreAuthCodeOptions) (goidc.VCPreAuthCodeResult, error) {
+	if ctx.VCHandlePreAuthCodeFunc == nil {
+		return goidc.VCPreAuthCodeResult{}, errors.New("vc pre-authorized code handler is not set")
+	}
+	return ctx.VCHandlePreAuthCodeFunc(ctx, preAuthCode, opts)
+}
+
+func (ctx Context) VCSaveOffer(offer *goidc.VCOffer) error {
+	return ctx.VCManager.SaveOffer(ctx, offer)
+}
+
+func (ctx Context) VCOffer(id string) (*goidc.VCOffer, error) {
+	return ctx.VCManager.Offer(ctx, id)
+}
+
+func (ctx Context) VCOfferID() string {
+	if ctx.VCOfferIDFunc == nil {
+		return uuid.NewString()
+	}
+	return ctx.VCOfferIDFunc(ctx)
+}
+
+func (ctx Context) VCIssuer(iss string) (goidc.VCIssuer, bool) {
+	for _, issuer := range ctx.VCIssuers {
+		if issuer.ID == iss {
+			return issuer, true
+		}
+	}
+	return goidc.VCIssuer{}, false
+}
+
+func (ctx Context) VCIssuerIDs() []string {
+	ids := make([]string, len(ctx.VCIssuers))
+	for i, issuer := range ctx.VCIssuers {
+		ids[i] = issuer.ID
+	}
+	return ids
+}
+
+func (ctx Context) VCIssuerState() string {
+	if ctx.VCIssuerStateFunc == nil {
+		return uuid.NewString()
+	}
+	return ctx.VCIssuerStateFunc(ctx)
 }
 
 //---------------------------------------- Key Management ----------------------------------------//

@@ -21,8 +21,8 @@ func main() {
 		provider.WithScopes(authutil.Scopes...),
 		provider.WithIDTokenSignatureAlgs(goidc.PS256),
 		provider.WithUserInfoSignatureAlgs(goidc.PS256),
-		provider.WithGrantTypes(goidc.GrantCIBA, goidc.GrantRefreshToken),
-		provider.WithCIBAProfile(goidc.CIBAProfileFAPI),
+		provider.WithCIBAGrant(goidc.CIBAProfileFAPI),
+		provider.WithRefreshTokenGrant(),
 		provider.WithCIBAHandleSessionFunc(initBackAuthFunc()),
 		provider.WithCIBADeliveryModes(goidc.CIBADeliveryModePoll, goidc.CIBADeliveryModePing, goidc.CIBADeliveryModePush),
 		provider.WithCIBAJAR(goidc.PS256),
@@ -105,12 +105,12 @@ func cibaActionHandler(op *provider.Provider) http.HandlerFunc {
 		}
 
 		as.Status = goidc.StatusSuccess
-		as.SetUserID(as.LoginHint)
-		as.GrantScopes(as.Scopes)
+		as.Subject = as.LoginHint
+		as.GrantedScopes = as.Scopes
 		if as.ACRValues != "" {
-			as.StoreParameter("id_token_claims", map[string]any{
+			as.Store = map[string]any{"id_token_claims": map[string]any{
 				goidc.ClaimACR: as.ACRValues,
-			})
+			}}
 		}
 		_ = op.SaveAuthnSession(r.Context(), as)
 		go func() {

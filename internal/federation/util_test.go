@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/luikyv/go-oidc/internal/dcr"
+	"github.com/luikyv/go-oidc/internal/client"
 	"github.com/luikyv/go-oidc/internal/oidc"
 	"github.com/luikyv/go-oidc/internal/oidctest"
 	"github.com/luikyv/go-oidc/internal/timeutil"
@@ -81,7 +81,7 @@ func TestClient(t *testing.T) {
 		t.Errorf("client.ID = %s, want %s", client.ID, clientID)
 	}
 
-	if client.FederationTrustAnchor == "" {
+	if client.Federation == nil || client.Federation.TrustAnchor == "" {
 		t.Error("the client is from a federation")
 	}
 }
@@ -2759,7 +2759,7 @@ func TestRegister_InvalidClientMetadata(t *testing.T) {
 	}
 
 	// When.
-	err := dcr.Validate(ctx, meta)
+	err := client.Validate(ctx, meta)
 
 	// Then.
 	if err == nil {

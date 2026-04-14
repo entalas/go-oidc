@@ -51,9 +51,6 @@ type AuthnSession struct {
 	// PolicyID is the id of the autentication policy used to authenticate
 	// the user.
 	PolicyID string `json:"policy_id,omitempty"`
-	// StepID is the identifier of the current step in a multi-step
-	// authentication policy. It is used only when such a policy is in effect.
-	StepID string `json:"step_id,omitempty"`
 
 	// GrantedScopes is the scopes the client will be granted access once the
 	// access token is generated.
@@ -73,39 +70,11 @@ type AuthnSession struct {
 	ExpiresAtTimestamp int            `json:"expires_at"`
 	CreatedAtTimestamp int            `json:"created_at"`
 	IDTokenHintClaims  map[string]any `json:"id_token_hint_claims,omitempty"`
+	VCInfo             *struct {
+		Issuer           string              `json:"issuer"`
+		ConfigurationIDs []VCConfigurationID `json:"configuration_ids"`
+	} `json:"vc_info,omitempty"`
 	AuthorizationParameters
-}
-
-// SetUserID sets the subject in the authentication session.
-func (s *AuthnSession) SetUserID(userID string) {
-	s.Subject = userID
-}
-
-func (s *AuthnSession) StoreParameter(key string, value any) {
-	if s.Store == nil {
-		s.Store = make(map[string]any)
-	}
-	s.Store[key] = value
-}
-
-func (s *AuthnSession) StoredParameter(key string) any {
-	return s.Store[key]
-}
-
-// GrantScopes sets the scopes the client will have access to.
-func (s *AuthnSession) GrantScopes(scopes string) {
-	s.GrantedScopes = scopes
-}
-
-// GrantAuthorizationDetails sets the authorization details the client will have
-// permissions to use.
-// This will only have effect if support for authorization details is enabled.
-func (s *AuthnSession) GrantAuthorizationDetails(authDetails []AuthDetail) {
-	s.GrantedAuthDetails = authDetails
-}
-
-func (s *AuthnSession) GrantResources(resources []string) {
-	s.GrantedResources = resources
 }
 
 func (s *AuthnSession) IsExpired() bool {

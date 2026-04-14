@@ -6,46 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/luikyv/go-oidc/internal/federation"
 	"github.com/luikyv/go-oidc/internal/oidc"
 	"github.com/luikyv/go-oidc/pkg/goidc"
 )
 
 type Options struct {
 	TrustChain []string
-}
-
-func ValidateScopes(ctx oidc.Context, c *goidc.Client, requestedScopes string) bool {
-	if requestedScopes == "" {
-		return true
-	}
-
-	// Filter the client scopes that are available.
-	var clientScopes []goidc.Scope
-	for _, scope := range ctx.Scopes {
-		if strings.Contains(c.ScopeIDs, scope.ID) {
-			clientScopes = append(clientScopes, scope)
-		}
-	}
-
-	// For each scope requested, make sure it matches one of the available client scopes.
-	for requestedScope := range strings.SplitSeq(requestedScopes, " ") {
-		matches := false
-		for _, scope := range clientScopes {
-			if scope.Matches(requestedScope) {
-				matches = true
-				break
-			}
-		}
-		if !matches {
-			return false
-		}
-	}
-
-	return true
 }
 
 func JWKByKeyID(ctx oidc.Context, c *goidc.Client, keyID string) (goidc.JSONWebKey, error) {
@@ -133,7 +101,7 @@ func fetchJWKS(ctx oidc.Context, c *goidc.Client) (*goidc.JSONWebKeySet, error) 
 
 func fetchSignedJWKS(ctx oidc.Context, c *goidc.Client) (*goidc.JSONWebKeySet, error) {
 	// Fetch the client's entity configuration to get the verification keys.
-	entityJWKS, err := federation.FetchEntityConfigurationJWKS(ctx, c.ID)
+	entityJWKS, err := ctx.OpenIDFedEntityJWKS(c.ID)
 	if err != nil {
 		return nil, goidc.WrapError(goidc.ErrorCodeInvalidClientMetadata, "could not fetch the client entity jwks", err)
 	}

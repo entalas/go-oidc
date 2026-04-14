@@ -31,6 +31,9 @@ type Grant struct {
 	// AuthCode is the authorization code used to generate this grant
 	// in case of authorization code grant type.
 	AuthCode string `json:"authorization_code,omitempty"`
+	// PreAuthCode is the pre-authorized code used to generate this grant
+	// in case of pre-authorized code grant type.
+	PreAuthCode string `json:"pre_authorized_code,omitempty"`
 
 	Type GrantType `json:"grant_type"`
 	// Subject is the ID of the user or client associated with the grant.
@@ -47,9 +50,8 @@ type Grant struct {
 
 	// JWKThumbprint stores the thumbprint of the JWK provided via DPoP.
 	JWKThumbprint string `json:"jwk_thumbprint,omitempty"`
-	// ClientCertThumbprint contains the thumbprint of the certificate used by
-	// the client to generate the token.
-	ClientCertThumbprint string `json:"client_cert_thumbprint,omitempty"`
+	// CertThumbprint contains the thumbprint of the certificate used to generate the token.
+	CertThumbprint string `json:"cert_thumbprint,omitempty"`
 
 	// Store allows storing custom data within the grant.
 	Store map[string]any `json:"store,omitempty"`

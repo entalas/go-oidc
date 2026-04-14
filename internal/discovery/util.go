@@ -16,8 +16,8 @@ func NewOpenIDConfiguration(ctx oidc.Context) OpenIDConfiguration {
 	config := OpenIDConfiguration{
 		Issuer:                       ctx.Issuer(),
 		AuthorizationEndpoint:        ctx.BaseURL() + ctx.AuthorizationEndpoint,
+		UserInfoEndpoint:             ctx.BaseURL() + ctx.UserInfoEndpoint,
 		TokenEndpoint:                ctx.BaseURL() + ctx.TokenEndpoint,
-		UserinfoEndpoint:             ctx.BaseURL() + ctx.UserInfoEndpoint,
 		JWKSEndpoint:                 ctx.BaseURL() + ctx.JWKSEndpoint,
 		ResponseTypes:                ctx.ResponseTypes,
 		ResponseModes:                ctx.ResponseModes,
